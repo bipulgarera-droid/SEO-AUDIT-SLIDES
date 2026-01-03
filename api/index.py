@@ -406,12 +406,56 @@ def generate_deep_audit_slides():
         if not creds:
             return jsonify({"error": "Google credentials not available"}), 500
         
+        # Upload screenshots to Supabase Storage if present
+        processed_screenshots = {}
+        if screenshots:
+            log_debug(f"Processing {len(screenshots)} screenshots...")
+            try:
+                import base64
+                import uuid
+                
+                # Ensure bucket exists (optional, might need manual creation)
+                bucket_name = 'audit-screenshots'
+                
+                for key, data_uri in screenshots.items():
+                    try:
+                        # Skip if already a URL
+                        if data_uri.startswith('http'):
+                            processed_screenshots[key] = data_uri
+                            continue
+                            
+                        # Parse Base64
+                        if ',' in data_uri:
+                            header, encoded = data_uri.split(',', 1)
+                        else:
+                            encoded = data_uri
+                            
+                        data = base64.b64decode(encoded)
+                        filename = f"{domain}/{key}_{uuid.uuid4()}.png"
+                        
+                        # Upload
+                        supabase.storage.from_(bucket_name).upload(
+                            file=data,
+                            path=filename,
+                            file_options={"content-type": "image/png", "x-upsert": "true"}
+                        )
+                        
+                        # Get Public URL
+                        public_url = supabase.storage.from_(bucket_name).get_public_url(filename)
+                        processed_screenshots[key] = public_url
+                        log_debug(f"Uploaded {key} to {public_url}")
+                        
+                    except Exception as e:
+                        log_debug(f"Failed to upload screenshot {key}: {e}")
+            except Exception as e:
+                log_debug(f"Error processing screenshots: {e}")
+        
         # Generate presentation using create_deep_audit_slides
         result = create_deep_audit_slides(
             data=audit_data,
             domain=domain,
             creds=creds,
-            screenshots=screenshots
+            screenshots=processed_screenshots or screenshots # Fallback to original if processing failed (though it will fail slides api)
         )
         
         if result and result.get('presentation_id'):
