@@ -358,13 +358,36 @@ def generate_deep_audit_slides():
     """Generate Google Slides presentation from audit data"""
     try:
         data = request.get_json()
-        audit_data = data.get('audit_data', {})
         screenshots = data.get('screenshots', {})
-        domain = audit_data.get('domain', 'unknown')
+        audit_data = data.get('audit_data')
+        project_id = data.get('project_id')
         
+        # If audit_data not provided but project_id is, fetch it
+        if not audit_data and project_id:
+            try:
+                result = supabase.table('projects').select('*').eq('id', project_id).execute()
+                if result.data:
+                    project = result.data[0]
+                    # Get full audit data
+                    full_data = project.get('full_audit_data', {}) or {}
+                    
+                    # Store logic for potential string JSON
+                    if isinstance(full_data, str):
+                        try:
+                            full_data = json.loads(full_data)
+                        except:
+                            full_data = {}
+                            
+                    # Construct audit_data expected by slides generator
+                    audit_data = full_data
+                    audit_data['domain'] = project.get('domain')
+            except Exception as e:
+                log_debug(f"Error fetching project for slides: {e}")
+
         if not audit_data:
-            return jsonify({"error": "No audit data provided"}), 400
-        
+            return jsonify({"error": "No audit data provided and could not fetch from project_id"}), 400
+
+        domain = audit_data.get('domain', 'unknown')
         log_debug(f"Generating slides for {domain}")
         
         # Get Google credentials
