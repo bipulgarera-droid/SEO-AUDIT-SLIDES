@@ -25,6 +25,7 @@ from dataforseo_client import (
 )
 from deep_audit_slides import create_deep_audit_slides
 from google_auth import get_google_credentials
+from execution.screenshot_capture import capture_screenshot_with_fallback
 
 # Load environment variables
 load_dotenv()
@@ -418,6 +419,22 @@ def generate_deep_audit_slides():
         
         # Upload screenshots to Supabase Storage if present
         processed_screenshots = {}
+        if not screenshots:
+            screenshots = {}
+            
+        # Fallback: Capture homepage screenshot if missing
+        if 'homepage' not in screenshots and domain:
+            log_debug(f"Homepage screenshot missing, attempting backend capture for {domain}...")
+            try:
+                homepage_b64 = capture_screenshot_with_fallback(f"https://{domain}")
+                if homepage_b64:
+                    screenshots['homepage'] = homepage_b64
+                    log_debug("Backend homepage capture successful")
+                else:
+                    log_debug("Backend homepage capture failed")
+            except Exception as e:
+                log_debug(f"Backend capture error: {e}")
+
         if screenshots:
             log_debug(f"Processing {len(screenshots)} screenshots...")
             try:
