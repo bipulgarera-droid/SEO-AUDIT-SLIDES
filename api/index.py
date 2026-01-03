@@ -233,7 +233,7 @@ def list_audits_endpoint():
                 })
         
         log_debug(f"Returning {len(audits)} audits")
-        return jsonify({"audits": audits})
+        return jsonify({"success": True, "audits": audits})
     except Exception as e:
         log_debug(f"Error listing audits: {e}")
         import traceback
