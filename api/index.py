@@ -602,41 +602,36 @@ def analyze_readability(audit_id):
             url = page.get('url', '')
             traffic = page.get('traffic', 0)
             
-            # Skip likely homepages for readability analysis
+            # 1. Skip homepages (must be inner page)
             if is_homepage(url):
                 continue
             
-            # Blacklist for typical shop/system pages
-            blacklist = ['/collections/', '/products/', '/cart', '/checkout', '/account', '/search', '/policies/', '/pages/']
+            # 2. Blacklist typical shop/system pages (broader matching without trailing slash)
+            blacklist = ['/collections', '/products', '/cart', '/checkout', '/account', '/search', '/policies/', '/pages/']
             if any(item in url.lower() for item in blacklist):
-                # Exception: if it's a specific "how-to" page nested in /pages/, we might want it, 
-                # but usually blog/article keywords catch those.
                 continue
                 
-            # Broader keyword matching (remove trailing slash to catch /blogs/, /posts/ etc)
-            is_blog = any(keyword in url.lower() for keyword in ['/blog', '/article', '/post', '/news', '/insight', '/guide', '202'])
+            # 3. Identify blog pages
+            blog_keywords = ['/blog', '/article', '/post', '/news', '/insight', '/guide', '202']
+            is_blog = any(keyword in url.lower() for keyword in blog_keywords)
+            
             candidates.append({
                 'url': url,
                 'traffic': traffic,
                 'is_blog': is_blog
             })
             
-        # Sort candidates: Priority to is_blog, then traffic
-        # We assign a score: is_blog=1000000, + traffic
-        candidates.sort(key=lambda x: (1000000 if x['is_blog'] else 0) + x['traffic'], reverse=True)
+        # Sort candidates: Priority to is_blog=True, then by traffic
+        candidates.sort(key=lambda x: (1 if x['is_blog'] else 0, x['traffic']), reverse=True)
         
         top_pages = candidates[:2]
         
         if not top_pages:
-             # Last resort: just take any pages if we filtered everything out (unlikely unless only homepage exists)
-             if pages:
-                 top_pages = [{'url': p.get('url'), 'traffic': 0} for p in pages[:2]]
-             else:
-                return jsonify({
-                    "success": True,
-                    "results": [],
-                    "message": "No pages found in audit data"
-                })
+            return jsonify({
+                "success": True,
+                "results": [],
+                "message": "No suitable blog or content pages found for readability analysis. Please ensure your site has been fully crawled."
+            })
         
         # Return placeholder results (actual analysis would require fetching and parsing page content)
         results = []
