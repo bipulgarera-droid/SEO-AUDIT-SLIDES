@@ -71,10 +71,14 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
             return f"data:image/png;base64,{base64_image}"
             
     except ImportError:
-        print("ERROR: Playwright not installed. Run: pip install playwright && playwright install chromium")
+        print("ERROR: Playwright not installed. Check requirements.txt.")
         return None
     except Exception as e:
-        print(f"ERROR capturing screenshot with Playwright: {e}")
+        error_msg = str(e)
+        if "Executable doesn't exist" in error_msg:
+            print(f"ERROR: Chromium not found. Playwright installation might be incomplete on this environment. Details: {error_msg}")
+        else:
+            print(f"ERROR capturing screenshot with Playwright: {e}")
         return None
 
 
@@ -92,13 +96,14 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
         Base64 encoded image string, or None if all methods fail
     """
     # Method 1: Playwright (best quality)
-    print(f"DEBUG: Attempting Playwright screenshot for {url}")
+    print(f"DEBUG: Attempting HIGH-QUALITY Playwright screenshot for {url}")
     result = capture_website_screenshot(url)
     if result:
+        print(f"SUCCESS: Playwright capture successful for {url}")
         return result
     
     # Method 2: PageSpeed API fallback
-    print(f"DEBUG: Playwright failed, trying PageSpeed API fallback")
+    print(f"WARNING: Playwright failed for {url}, falling back to lower-quality PageSpeed API")
     try:
         from execution.pagespeed_insights import fetch_screenshot
         screenshot_path = fetch_screenshot(url)
@@ -106,13 +111,14 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
         if screenshot_path and os.path.exists(screenshot_path):
             with open(screenshot_path, 'rb') as f:
                 screenshot_bytes = f.read()
-            print(f"DEBUG: PageSpeed fallback successful ({len(screenshot_bytes)} bytes)")
+            print(f"DEBUG: PageSpeed fallback successful for {url} ({len(screenshot_bytes)} bytes)")
+            # Important: Pagespeed returns JPEG thumbnails usually
             return f"data:image/jpeg;base64,{base64.b64encode(screenshot_bytes).decode()}"
     except Exception as e:
-        print(f"ERROR PageSpeed fallback failed: {e}")
+        print(f"ERROR PageSpeed fallback failed for {url}: {e}")
     
     # Method 3: All failed - return None (slide will be skipped)
-    print(f"WARNING: All screenshot methods failed for {url}")
+    print(f"CRITICAL: All screenshot methods failed for {url}")
     return None
 
 
