@@ -434,44 +434,46 @@ def generate_deep_audit_slides():
         
         # Upload screenshots to Supabase Storage if present
         processed_screenshots = {}
-        if not screenshots:
-            screenshots = {}
-            
-        # Fallback: Capture homepage screenshot if missing OR if it's too short (invalid)
-        is_homepage_missing = 'homepage' not in screenshots or not screenshots.get('homepage') or len(str(screenshots.get('homepage'))) < 100
-        
-        if is_homepage_missing and domain and domain != 'unknown':
-            log_debug(f"Homepage screenshot missing or invalid, attempting backend capture for {domain}...")
-            try:
-                homepage_b64 = capture_screenshot_with_fallback(domain)
-                if homepage_b64:
-                    screenshots['homepage'] = homepage_b64
-                    log_debug("Backend homepage capture successful")
-                else:
-                    log_debug("Backend homepage capture failed")
-            except Exception as e:
-                log_debug(f"Backend capture error: {e}")
+        try:
+            if not screenshots:
+                screenshots = {}
+            if not isinstance(screenshots, dict):
+                log_debug(f"Warning: screenshots is not a dict, it is {type(screenshots)}. resetting to empty.")
+                screenshots = {}
 
-        if screenshots:
-            log_debug(f"Processing {len(screenshots)} screenshots...")
+            # Fallback for Homepage
             try:
+                # Basic validation for homepage key existence
+                hp = screenshots.get('homepage')
+                is_homepage_missing = not hp or len(str(hp)) < 100
+                
+                if is_homepage_missing and domain and domain != 'unknown':
+                    log_debug(f"Homepage screenshot missing, attempting backend capture for {domain}...")
+                    homepage_b64 = capture_screenshot_with_fallback(domain)
+                    if homepage_b64:
+                        screenshots['homepage'] = homepage_b64
+            except Exception as e:
+                log_debug(f"Homepage fallback error: {e}")
+
+            if screenshots:
+                log_debug(f"Processing {len(screenshots)} screenshots...")
                 import base64
                 import uuid
                 
-                # Ensure bucket exists (try to create if missing, though typically needs admin/service role)
                 bucket_name = 'audit-screenshots'
+                # Ensure bucket exists
                 try:
                     buckets = supabase.storage.list_buckets()
                     existing_buckets = [b.name for b in buckets]
                     if bucket_name not in existing_buckets:
-                        log_debug(f"Creating bucket {bucket_name}...")
                         supabase.storage.create_bucket(bucket_name, options={"public": True})
                 except Exception as e:
-                    # Ignore error, might be permission issue or already exists
-                    log_debug(f"Bucket check/creation warning: {e}")
+                    log_debug(f"Bucket check warning: {e}")
 
                 for key, data_uri in screenshots.items():
                     try:
+                        if not data_uri or not isinstance(data_uri, str):
+                            continue
                         # Skip if already a URL
                         if data_uri.startswith('http'):
                             processed_screenshots[key] = data_uri
@@ -479,12 +481,11 @@ def generate_deep_audit_slides():
                             
                         # Parse Base64
                         if ',' in data_uri:
-                            header, encoded = data_uri.split(',', 1)
+                            _, encoded = data_uri.split(',', 1)
                         else:
                             encoded = data_uri
                             
                         data = base64.b64decode(encoded)
-                        # Minimal filename to avoid issues
                         filename = f"{uuid.uuid4()}.png"
                         
                         # Upload
@@ -497,24 +498,19 @@ def generate_deep_audit_slides():
                         # Get Public URL
                         public_url = supabase.storage.from_(bucket_name).get_public_url(filename)
                         processed_screenshots[key] = public_url
-                        log_debug(f"Uploaded {key} to {public_url}")
                         
                     except Exception as e:
                         log_debug(f"Failed to upload screenshot {key}: {e}")
-                        # If upload fails, DO NOT add the base64 version back, or it will crash.
-                        # Instead, just omit it so slides generate without this image.
                         continue
+                        
+        except Exception as e:
+            log_debug(f"CRITICAL SCREENSHOT ERROR (Skipping all): {e}")
+            processed_screenshots = {} # Fallback to no screenshots
 
-            except Exception as e:
-                log_debug(f"Error processing screenshots: {e}")
-        
-        log_debug(f"Final screenshots passed to slides (Type: {type(processed_screenshots)}): {list(processed_screenshots.keys())}")
-        for k, v in processed_screenshots.items():
-            log_debug(f"  {k}: {v[:50]}...") # Log start of URL to verify it's not data:image...
+        log_debug(f"Final screenshots count: {len(processed_screenshots)}")
         
         # Ensure audit_data is a dict
         if isinstance(audit_data, str):
-            log_debug("Warning: audit_data is still string in final call, parsing...")
             try:
                 audit_data = json.loads(audit_data)
             except:
@@ -525,7 +521,7 @@ def generate_deep_audit_slides():
             data=audit_data,
             domain=domain,
             creds=creds,
-            screenshots=processed_screenshots # STRICTLY use processed ones
+            screenshots=processed_screenshots
         )
         
         if result and result.get('presentation_id'):
@@ -540,7 +536,16 @@ def generate_deep_audit_slides():
     except Exception as e:
         log_debug(f"Error generating slides: {e}")
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        
+        # WRITE ERROR TO TMP FILE
+        try:
+            with open("/tmp/audit_error.log", "w") as f:
+                f.write(f"Error: {str(e)}\n")
+                f.write(traceback.format_exc())
+        except:
+            pass
+            
+        return jsonify({"error": f"Internal Error: {str(e)}"}), 500
 
 # =============================================================================
 # READABILITY ANALYSIS
@@ -594,9 +599,18 @@ def analyze_readability(audit_id):
         
         candidates = []
         
-        # Helper to check if URL is likely homepage
+        # Helper to check if URL is likely homepage (more accurate version)
         def is_homepage(u):
-            return u.strip('/').count('/') < 3 # primitive check, assumes https://domain.com is 2 slashes
+            from urllib.parse import urlparse
+            parsed = urlparse(u)
+            path = parsed.path.strip('/')
+            return path == '' or path in ['index.html', 'index.php', 'home']
+            
+        log_debug(f"Readability: Starting candidate selection. Pages: {len(pages)}, Keywords: {len(audit_data.get('organic_keywords', []))}")
+        
+        # Define filters outside loop so they're accessible everywhere
+        blacklist = ['/collections', '/products', '/cart', '/checkout', '/account', '/search', '/policies/', '/pages/']
+        blog_keywords = ['/blog', '/blogs', '/article', '/post', '/news', '/insight', '/guide', '202']
             
         for page in pages:
             url = page.get('url', '')
@@ -606,13 +620,11 @@ def analyze_readability(audit_id):
             if is_homepage(url):
                 continue
             
-            # 2. Blacklist typical shop/system pages (broader matching without trailing slash)
-            blacklist = ['/collections', '/products', '/cart', '/checkout', '/account', '/search', '/policies/', '/pages/']
+            # 2. Skip blacklisted shop/system pages
             if any(item in url.lower() for item in blacklist):
                 continue
                 
             # 3. Identify blog pages
-            blog_keywords = ['/blog', '/blogs', '/article', '/post', '/news', '/insight', '/guide', '202']
             is_blog = any(keyword in url.lower() for keyword in blog_keywords)
             
             candidates.append({
@@ -621,44 +633,76 @@ def analyze_readability(audit_id):
                 'is_blog': is_blog
             })
             
-        # 4. Supplemental: Add top ranking pages from Organic Keywords (Legacy Method)
-        # This catches pages that might not have been fully crawled but are ranking well
+        log_debug(f"Readability: After crawled pages filter: {len(candidates)} candidates")
+            
+        # 4. Supplemental: Add top ranking pages from Organic Keywords
         organic_keywords = audit_data.get('organic_keywords', [])
         existing_urls = {c['url'] for c in candidates}
         
+        added_from_kw = 0
         for kw in organic_keywords:
             if not isinstance(kw, dict): continue
             
             # Extract URL and traffic from DataForSEO structure
             serp_item = kw.get('ranked_serp_element', {}).get('serp_item', {})
-            # Try both nested and flat structures
             url_kw = kw.get('url') or serp_item.get('url', '')
             traffic_kw = kw.get('traffic_cost') or serp_item.get('etv', 0) or 0
             
             if not url_kw or url_kw in existing_urls:
                 continue
                 
-            # Run filters on keyword URLs too
+            # Skip homepage
             if is_homepage(url_kw): continue
             
+            # Skip blacklisted pages
             if any(item in url_kw.lower() for item in blacklist):
                 continue
                 
             is_blog_kw = any(keyword in url_kw.lower() for keyword in blog_keywords)
             
-            # Only add if it looks like a blog or has significant traffic
-            if is_blog_kw or traffic_kw > 100:
+            # Add if it looks like a blog OR has significant traffic
+            if is_blog_kw or traffic_kw > 50:  # Lowered threshold from 100 to 50
                 candidates.append({
                     'url': url_kw,
                     'traffic': traffic_kw,
                     'is_blog': is_blog_kw
                 })
                 existing_urls.add(url_kw)
+                added_from_kw += 1
+                
+        log_debug(f"Readability: Added {added_from_kw} URLs from organic_keywords. Total candidates: {len(candidates)}")
             
         # Sort candidates: Priority to is_blog=True, then by traffic
         candidates.sort(key=lambda x: (1 if x['is_blog'] else 0, x['traffic']), reverse=True)
         
         top_pages = candidates[:2]
+        
+        # FALLBACK: If no candidates, try ANY inner page (including products/collections)
+        if not top_pages:
+            log_debug("No blog pages found, attempting fallback to any inner pages...")
+            fallback_candidates = []
+            for page in pages:
+                url = page.get('url', '')
+                traffic = page.get('traffic', 0)
+                # Only skip homepage
+                if is_homepage(url):
+                    continue
+                fallback_candidates.append({'url': url, 'traffic': traffic, 'is_blog': False})
+                
+            # Also add from organic keywords without strict blog filter
+            for kw in organic_keywords:
+                if not isinstance(kw, dict): continue
+                serp_item = kw.get('ranked_serp_element', {}).get('serp_item', {})
+                url_kw = kw.get('url') or serp_item.get('url', '')
+                traffic_kw = kw.get('traffic_cost') or serp_item.get('etv', 0) or 0
+                if not url_kw or is_homepage(url_kw): continue
+                if url_kw in {c['url'] for c in fallback_candidates}: continue
+                fallback_candidates.append({'url': url_kw, 'traffic': traffic_kw, 'is_blog': False})
+                
+            # Sort by traffic and take top 2
+            fallback_candidates.sort(key=lambda x: x['traffic'], reverse=True)
+            top_pages = fallback_candidates[:2]
+            log_debug(f"Fallback found {len(top_pages)} pages for readability.")
         
         if not top_pages:
             return jsonify({
