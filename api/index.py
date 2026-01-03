@@ -398,6 +398,15 @@ def generate_deep_audit_slides():
         if not audit_data:
             return jsonify({"error": "No audit data provided and could not fetch from project_id"}), 400
 
+        # Ensure critical nested fields are parsed if they are strings
+        # This fixes "str object has no attribute get" errors
+        for field in ['domain_rank', 'summary', 'backlinks_summary', 'organic_keywords', 'pages', 'referring_domains']:
+            if isinstance(audit_data.get(field), str):
+                try:
+                    audit_data[field] = json.loads(audit_data[field])
+                except:
+                    pass # Keep as is if parse fails
+
         domain = audit_data.get('domain', 'unknown')
         log_debug(f"Generating slides for {domain}")
         
@@ -464,9 +473,17 @@ def generate_deep_audit_slides():
             except Exception as e:
                 log_debug(f"Error processing screenshots: {e}")
         
-        log_debug(f"Final screenshots passed to slides: {list(processed_screenshots.keys())}")
+        log_debug(f"Final screenshots passed to slides (Type: {type(processed_screenshots)}): {list(processed_screenshots.keys())}")
         for k, v in processed_screenshots.items():
             log_debug(f"  {k}: {v[:50]}...") # Log start of URL to verify it's not data:image...
+        
+        # Ensure audit_data is a dict
+        if isinstance(audit_data, str):
+            log_debug("Warning: audit_data is still string in final call, parsing...")
+            try:
+                audit_data = json.loads(audit_data)
+            except:
+                pass
 
         # Generate presentation using create_deep_audit_slides
         result = create_deep_audit_slides(
