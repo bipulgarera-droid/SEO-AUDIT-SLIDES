@@ -621,6 +621,40 @@ def analyze_readability(audit_id):
                 'is_blog': is_blog
             })
             
+        # 4. Supplemental: Add top ranking pages from Organic Keywords (Legacy Method)
+        # This catches pages that might not have been fully crawled but are ranking well
+        organic_keywords = audit_data.get('organic_keywords', [])
+        existing_urls = {c['url'] for c in candidates}
+        
+        for kw in organic_keywords:
+            if not isinstance(kw, dict): continue
+            
+            # Extract URL and traffic from DataForSEO structure
+            serp_item = kw.get('ranked_serp_element', {}).get('serp_item', {})
+            # Try both nested and flat structures
+            url_kw = kw.get('url') or serp_item.get('url', '')
+            traffic_kw = kw.get('traffic_cost') or serp_item.get('etv', 0) or 0
+            
+            if not url_kw or url_kw in existing_urls:
+                continue
+                
+            # Run filters on keyword URLs too
+            if is_homepage(url_kw): continue
+            
+            if any(item in url_kw.lower() for item in blacklist):
+                continue
+                
+            is_blog_kw = any(keyword in url_kw.lower() for keyword in blog_keywords)
+            
+            # Only add if it looks like a blog or has significant traffic
+            if is_blog_kw or traffic_kw > 100:
+                candidates.append({
+                    'url': url_kw,
+                    'traffic': traffic_kw,
+                    'is_blog': is_blog_kw
+                })
+                existing_urls.add(url_kw)
+            
         # Sort candidates: Priority to is_blog=True, then by traffic
         candidates.sort(key=lambda x: (1 if x['is_blog'] else 0, x['traffic']), reverse=True)
         
@@ -635,20 +669,82 @@ def analyze_readability(audit_id):
         
         # Return placeholder results (actual analysis would require fetching and parsing page content)
         results = []
+        # Real Analysis
+        import requests
+        from bs4 import BeautifulSoup
+        import textstat
+        
+        results = []
         for page in top_pages:
-            results.append({
-                "url": page['url'],
-                "flesch_reading_ease": 60,
-                "flesch_kincaid_grade": 8,
-                "gunning_fog": 9,
-                "smog_index": 7,
-                "avg_sentence_length": 15,
-                "avg_syllables_per_word": 1.5,
-                "difficult_words_pct": 12,
-                "reading_time_mins": 4,
-                "rating": "good",
-                "rating_label": "Good - Standard readability level. Content is accessible to most readers.",
-                "grade": "8"
+            url = page['url']
+            try:
+                # Fetch page content
+                print(f"DEBUG: Fetching content for readability analysis: {url}")
+                # Use a standard user agent to avoid bot blocks
+                resp = requests.get(url, timeout=15, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'})
+                
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.content, 'html.parser')
+                    
+                    # Clean boilerplate
+                    for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'noscript', 'iframe']):
+                        tag.decompose()
+                        
+                    # Get main text
+                    text = soup.get_text(separator=' ', strip=True)
+                    
+                    # Calculate metrics if we have enough content
+                    if len(text) > 200:
+                        # Helper for difficult words percentage
+                        def get_difficult_words_pct(t):
+                            try:
+                                words = t.split()
+                                if not words: return 0
+                                return (textstat.difficult_words(t) / len(words)) * 100
+                            except: return 12 # Default fallback
+                            
+                        # Grade logic
+                        grade_score = textstat.flesch_kincaid_grade(text)
+                        
+                        # Rating logic
+                        flesch = textstat.flesch_reading_ease(text)
+                        if flesch > 60:
+                            rating = "good"
+                            rating_label = "Good - Standard readability level. Content is accessible to most readers."
+                        elif flesch > 30:
+                            rating = "fair"
+                            rating_label = "Fair - Somewhat difficult. May require high school education."
+                        else:
+                            rating = "poor"
+                            rating_label = "Poor - Very difficult. Best for academic or technical audiences."
+                            
+                        results.append({
+                            "url": url,
+                            "flesch_reading_ease": int(flesch),
+                            "flesch_kincaid_grade": round(grade_score, 1),
+                            "gunning_fog": round(textstat.gunning_fog(text), 1),
+                            "smog_index": round(textstat.smog_index(text), 1),
+                            "avg_sentence_length": int(textstat.avg_sentence_length(text)),
+                            "avg_syllables_per_word": round(textstat.avg_syllables_per_word(text), 1),
+                            "difficult_words_pct": int(get_difficult_words_pct(text)),
+                            "reading_time_mins": max(1, int(len(text.split()) / 200)), # Approx 200 wpm
+                            "rating": rating,
+                            "rating_label": rating_label,
+                            "grade": str(int(grade_score))
+                        })
+                    else:
+                        print(f"DEBUG: Not enough text content found on {url} (Length: {len(text)})")
+                else:
+                    print(f"DEBUG: API fetch failed for {url}: {resp.status_code}")
+                    
+            except Exception as e:
+                print(f"DEBUG: Readability analysis error for {url}: {e}")
+                continue
+
+        if not results:
+             return jsonify({
+                "success": False, 
+                "message": "Could not analyze content. Pages may be blocking crawlers or have insufficient text."
             })
         
         return jsonify({
