@@ -605,6 +605,13 @@ def analyze_readability(audit_id):
             # Skip likely homepages for readability analysis
             if is_homepage(url):
                 continue
+            
+            # Blacklist for typical shop/system pages
+            blacklist = ['/collections/', '/products/', '/cart', '/checkout', '/account', '/search', '/policies/', '/pages/']
+            if any(item in url.lower() for item in blacklist):
+                # Exception: if it's a specific "how-to" page nested in /pages/, we might want it, 
+                # but usually blog/article keywords catch those.
+                continue
                 
             # Broader keyword matching (remove trailing slash to catch /blogs/, /posts/ etc)
             is_blog = any(keyword in url.lower() for keyword in ['/blog', '/article', '/post', '/news', '/insight', '/guide', '202'])

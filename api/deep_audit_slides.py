@@ -1332,29 +1332,6 @@ def create_slide_cover(sid, domain):
                 'fields': 'fontSize,foregroundColor,italic'
             }
         },
-        # Yellow Arrow (Chevron)
-        {
-            'createShape': {
-                'objectId': f"{sid}_arrow",
-                'shapeType': 'CHEVRON', 
-                'elementProperties': {
-                    'pageObjectId': sid,
-                    'size': {'height': {'magnitude': 40, 'unit': 'PT'}, 'width': {'magnitude': 60, 'unit': 'PT'}},
-                    'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': 40, 'translateY': 320, 'unit': 'PT'}
-                }
-            }
-        },
-        {
-            'updateShapeProperties': {
-                'objectId': f"{sid}_arrow",
-                'shapeProperties': {
-                    'shapeBackgroundFill': {'solidFill': {'color': {'rgbColor': COLORS['yellow']}}},
-                    'outline': {'propertyState': 'NOT_RENDERED'},
-                    'contentAlignment': 'MIDDLE' 
-                },
-                'fields': 'shapeBackgroundFill,outline'
-            }
-        },
         # Image (Funnel) on Right Panel
         {
             'createImage': {

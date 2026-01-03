@@ -514,7 +514,14 @@ def get_lighthouse_audit(url: str) -> Dict[str, Any]:
         data = response.json()
         
         if data.get('status_code') == 20000 and data.get('tasks'):
-            result = data['tasks'][0].get('result', [{}])[0]
+            task = data['tasks'][0]
+            if not task.get('result'):
+                return {"success": False, "error": "No result data available for this URL"}
+                
+            result = task.get('result')[0]
+            if not result:
+                return {"success": False, "error": "Empty result from PageSpeed API"}
+                
             categories = result.get('categories', {})
             audits = result.get('audits', {})
             
@@ -522,19 +529,19 @@ def get_lighthouse_audit(url: str) -> Dict[str, Any]:
                 "success": True,
                 "url": url,
                 "scores": {
-                    "performance": int((categories.get('performance', {}).get('score') or 0) * 100),
-                    "seo": int((categories.get('seo', {}).get('score') or 0) * 100),
-                    "accessibility": int((categories.get('accessibility', {}).get('score') or 0) * 100),
-                    "best_practices": int((categories.get('best-practices', {}).get('score') or 0) * 100)
+                    "performance": int((categories.get('performance', {}).get('score') or 0) * 100) if categories else 0,
+                    "seo": int((categories.get('seo', {}).get('score') or 0) * 100) if categories else 0,
+                    "accessibility": int((categories.get('accessibility', {}).get('score') or 0) * 100) if categories else 0,
+                    "best_practices": int((categories.get('best-practices', {}).get('score') or 0) * 100) if categories else 0
                 },
                 "core_web_vitals": {
-                    "lcp": audits.get('largest-contentful-paint', {}).get('displayValue'),
-                    "fid": audits.get('max-potential-fid', {}).get('displayValue'),
-                    "cls": audits.get('cumulative-layout-shift', {}).get('displayValue'),
-                    "fcp": audits.get('first-contentful-paint', {}).get('displayValue'),
-                    "tti": audits.get('interactive', {}).get('displayValue'),
-                    "tbt": audits.get('total-blocking-time', {}).get('displayValue'),
-                    "speed_index": audits.get('speed-index', {}).get('displayValue')
+                    "lcp": audits.get('largest-contentful-paint', {}).get('displayValue', 'N/A') if audits else 'N/A',
+                    "fid": audits.get('max-potential-fid', {}).get('displayValue', 'N/A') if audits else 'N/A',
+                    "cls": audits.get('cumulative-layout-shift', {}).get('displayValue', 'N/A') if audits else 'N/A',
+                    "fcp": audits.get('first-contentful-paint', {}).get('displayValue', 'N/A') if audits else 'N/A',
+                    "tti": audits.get('interactive', {}).get('displayValue', 'N/A') if audits else 'N/A',
+                    "tbt": audits.get('total-blocking-time', {}).get('displayValue', 'N/A') if audits else 'N/A',
+                    "speed_index": audits.get('speed-index', {}).get('displayValue', 'N/A') if audits else 'N/A'
                 }
             }
         else:
