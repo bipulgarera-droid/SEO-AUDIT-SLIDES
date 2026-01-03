@@ -440,7 +440,8 @@ def generate_deep_audit_slides():
                             encoded = data_uri
                             
                         data = base64.b64decode(encoded)
-                        filename = f"{domain}/{key}_{uuid.uuid4()}.png"
+                        # Minimal filename to avoid issues
+                        filename = f"{uuid.uuid4()}.png"
                         
                         # Upload
                         supabase.storage.from_(bucket_name).upload(
@@ -456,15 +457,23 @@ def generate_deep_audit_slides():
                         
                     except Exception as e:
                         log_debug(f"Failed to upload screenshot {key}: {e}")
+                        # If upload fails, DO NOT add the base64 version back, or it will crash.
+                        # Instead, just omit it so slides generate without this image.
+                        continue
+
             except Exception as e:
                 log_debug(f"Error processing screenshots: {e}")
         
+        log_debug(f"Final screenshots passed to slides: {list(processed_screenshots.keys())}")
+        for k, v in processed_screenshots.items():
+            log_debug(f"  {k}: {v[:50]}...") # Log start of URL to verify it's not data:image...
+
         # Generate presentation using create_deep_audit_slides
         result = create_deep_audit_slides(
             data=audit_data,
             domain=domain,
             creds=creds,
-            screenshots=processed_screenshots or screenshots # Fallback to original if processing failed (though it will fail slides api)
+            screenshots=processed_screenshots # STRICTLY use processed ones
         )
         
         if result and result.get('presentation_id'):
