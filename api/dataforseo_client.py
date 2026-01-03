@@ -353,7 +353,17 @@ def get_page_issues(task_id: str, issue_type: str = "all", limit: int = 100) -> 
                     "onpage_score": page.get('onpage_score', 0),
                     "resource_type": page.get('resource_type', 'html'),
                     
-                    # SEO meta
+                    # Meta object for frontend compatibility (frontend reads from p.meta.*)
+                    "meta": {
+                        "title": title,
+                        "description": description,
+                        "h1": h1_list,
+                        "h2": h2_list,
+                        "h3": h3_list,
+                        "canonical": canonical,
+                    },
+                    
+                    # Direct fields for backward compatibility
                     "title": title,
                     "title_length": len(title),
                     "description": description,
@@ -361,7 +371,7 @@ def get_page_issues(task_id: str, issue_type: str = "all", limit: int = 100) -> 
                     "canonical": canonical,
                     "meta_keywords": meta_keywords,
                     
-                    # Headings
+                    # Headings (direct access)
                     "h1": h1_list,
                     "h1_count": len(h1_list),
                     "h2": h2_list,
@@ -1359,6 +1369,88 @@ def _get_mock_audit_data(domain: str, max_pages: int) -> Dict[str, Any]:
         "referring_domains": []  # Empty - requires separate subscription
     }
 
+
+
+def fetch_domain_metrics(domain: str) -> Dict[str, Any]:
+    """
+    Fetch domain-level metrics including TOTAL keyword count and TOTAL traffic.
+    Uses DataForSEO Domain Rank Overview API.
+    
+    This gives accurate totals even for sites ranking for 10,000+ keywords,
+    unlike fetch_ranked_keywords which is limited to 1000 keywords.
+    
+    Args:
+        domain: The domain to analyze
+        
+    Returns:
+        Dict with total_keywords, total_traffic, and other domain metrics
+    """
+    endpoint = f"{DATAFORSEO_API_URL}/dataforseo_labs/google/domain_rank_overview/live"
+    
+    payload = [{
+        "target": domain,
+        "location_code": 2356,  # India
+        "language_code": "en"
+    }]
+    
+    try:
+        response = requests.post(
+            endpoint,
+            headers={**get_auth_header(), "Content-Type": "application/json"},
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status_code') == 20000 and data.get('tasks'):
+            result = (data['tasks'][0].get('result') or [{}])[0] or {}
+            items = result.get('items') or []
+            
+            # Get metrics from the first item (organic search)
+            metrics = {}
+            for item in items:
+                if item.get('se_type') == 'organic':
+                    metrics = item.get('metrics', {})
+                    break
+            
+            # If no organic found, try first item
+            if not metrics and items:
+                metrics = items[0].get('metrics', {})
+            
+            # Extract key metrics
+            total_keywords = metrics.get('organic', {}).get('count', 0) or 0
+            total_traffic = metrics.get('organic', {}).get('etv', 0) or 0  # Estimated Traffic Value
+            paid_keywords = metrics.get('paid', {}).get('count', 0) or 0
+            paid_traffic = metrics.get('paid', {}).get('etv', 0) or 0
+            
+            # Also get position distribution if available
+            pos_distribution = metrics.get('organic', {}).get('pos_1', 0) or 0
+            
+            print(f"DEBUG domain_metrics: domain={domain}, total_keywords={total_keywords}, total_traffic={total_traffic}", flush=True)
+            
+            return {
+                "success": True,
+                "total_keywords": int(total_keywords),
+                "total_traffic": int(total_traffic),
+                "paid_keywords": int(paid_keywords),
+                "paid_traffic": int(paid_traffic),
+                "top_1_keywords": metrics.get('organic', {}).get('pos_1', 0) or 0,
+                "top_3_keywords": (metrics.get('organic', {}).get('pos_1', 0) or 0) + 
+                                 (metrics.get('organic', {}).get('pos_2_3', 0) or 0),
+                "top_10_keywords": (metrics.get('organic', {}).get('pos_1', 0) or 0) + 
+                                  (metrics.get('organic', {}).get('pos_2_3', 0) or 0) +
+                                  (metrics.get('organic', {}).get('pos_4_10', 0) or 0),
+                "raw_metrics": metrics
+            }
+        else:
+            error_msg = data.get('status_message', 'Unknown error')
+            print(f"DEBUG domain_metrics: API error - {error_msg}", flush=True)
+            return {"success": False, "error": error_msg}
+            
+    except Exception as e:
+        print(f"DEBUG domain_metrics: Exception - {e}", flush=True)
+        return {"success": False, "error": str(e)}
 
 
 def fetch_ranked_keywords(domain: str, limit: int = 1000) -> Dict[str, Any]:

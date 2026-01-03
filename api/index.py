@@ -129,7 +129,8 @@ def create_new_audit():
     try:
         data = request.get_json()
         domain = data.get('domain', '').strip()
-        max_pages = data.get('max_pages', 200)
+        # Accept both 'limit' (frontend) and 'max_pages' (legacy) - default to 5 not 200
+        max_pages = data.get('limit') or data.get('max_pages') or 5
         
         if not domain:
             return jsonify({"error": "Domain is required"}), 400
@@ -147,10 +148,19 @@ def create_new_audit():
         task_id = audit_result.get('task_id')
         log_debug(f"On-page audit started: task_id={task_id}")
         
-        # Step 2: Fetch organic keywords
+        # Step 2: Fetch organic keywords (up to 1000 for display)
         keywords_data = fetch_ranked_keywords(domain)
         keywords = keywords_data.get('keywords', []) if isinstance(keywords_data, dict) else []
         log_debug(f"Fetched {len(keywords)} keywords")
+        
+        # Step 2.5: Fetch domain metrics for ACCURATE totals (total keywords, total traffic)
+        from api.dataforseo_client import fetch_domain_metrics
+        domain_metrics = fetch_domain_metrics(domain)
+        if domain_metrics.get('success'):
+            log_debug(f"Domain metrics: {domain_metrics.get('total_keywords')} keywords, {domain_metrics.get('total_traffic')} traffic")
+        else:
+            log_debug(f"Domain metrics failed: {domain_metrics.get('error')}")
+            domain_metrics = {}
         
         # Step 3: Fetch backlinks summary
         backlinks_summary = fetch_backlinks_summary(domain)
@@ -167,39 +177,125 @@ def create_new_audit():
             'status': 'pending',
             'created_at': time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             'organic_keywords': keywords,
+            # Accurate totals from Domain Rank Overview API
+            'total_keywords': domain_metrics.get('total_keywords', len(keywords)),
+            'total_traffic': domain_metrics.get('total_traffic', 0),
+            'top_1_keywords': domain_metrics.get('top_1_keywords', 0),
+            'top_3_keywords': domain_metrics.get('top_3_keywords', 0),
+            'top_10_keywords': domain_metrics.get('top_10_keywords', 0),
+            'keywords_at_limit': len(keywords) >= 1000,
             'backlinks_summary': backlinks_summary,
             'referring_domains': referring_domains,
             'max_pages': max_pages
         }
         
-        # Check if project exists for this domain
-        existing = supabase.table('projects').select('id').eq('domain', domain).execute()
-        
-        if existing.data and len(existing.data) > 0:
-            project_id = existing.data[0]['id']
-            supabase.table('projects').update({
-                'full_audit_data': full_audit_data
-            }).eq('id', project_id).execute()
-            log_debug(f"Updated existing project {project_id}")
-        else:
-            # Create new project
-            new_project = supabase.table('projects').insert({
-                'domain': domain,
-                'full_audit_data': full_audit_data,
-                'source': 'audit-app'
-            }).execute()
-            project_id = new_project.data[0]['id'] if new_project.data else None
-            log_debug(f"Created new project {project_id}")
+        # Always create a NEW project for each audit (allows audit history for same domain)
+        new_project = supabase.table('projects').insert({
+            'domain': domain,
+            'full_audit_data': full_audit_data,
+            'source': 'audit-app'
+        }).execute()
+        project_id = new_project.data[0]['id'] if new_project.data else None
+        log_debug(f"Created new project {project_id}")
         
         return jsonify({
             "success": True,
-            "task_id": task_id,
-            "project_id": project_id,
+            "audit_id": project_id,       # Frontend expects 'audit_id'
+            "onpage_task_id": task_id,    # Frontend expects 'onpage_task_id'
+            "task_id": task_id,           # Keep for backward compatibility
+            "project_id": project_id,     # Keep for backward compatibility
             "message": f"Audit started for {domain}"
         })
         
     except Exception as e:
         log_debug(f"Error creating audit: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/save-audit-results', methods=['POST'])
+def save_audit_results():
+    """Fetch and save on-page audit results when crawl completes"""
+    if not supabase:
+        return jsonify({"error": "Supabase not configured"}), 500
+    
+    try:
+        data = request.get_json()
+        audit_id = data.get('audit_id')
+        task_id = data.get('task_id')
+        
+        if not audit_id or not task_id:
+            return jsonify({"error": "audit_id and task_id required"}), 400
+        
+        log_debug(f"Saving audit results for {audit_id} with task {task_id}")
+        
+        # Fetch the on-page audit results from DataForSEO
+        from api.dataforseo_client import get_page_issues
+        pages_data = get_page_issues(task_id, limit=200)  # Get up to 200 pages
+        pages = pages_data.get('pages', []) if pages_data.get('success') else []
+        
+        log_debug(f"Fetched {len(pages)} pages from on-page audit")
+        
+        # Get existing project data
+        result = supabase.table('projects').select('*').eq('id', audit_id).execute()
+        if not result.data:
+            return jsonify({"error": "Audit not found"}), 404
+        
+        project = result.data[0]
+        audit_data = project.get('full_audit_data', {}) or {}
+        if isinstance(audit_data, str):
+            try:
+                audit_data = json.loads(audit_data)
+            except:
+                audit_data = {}
+        
+        # Get domain from audit data
+        domain = audit_data.get('domain', project.get('domain', '')).replace('https://', '').replace('http://', '').rstrip('/')
+        print(f"DEBUG save-audit: domain='{domain}', audit_data_keys={list(audit_data.keys())}", flush=True)
+        
+        # Fetch PageSpeed data using Google's PageSpeed Insights API
+        pagespeed = {}
+        if domain:
+            print(f"DEBUG save-audit: Fetching PageSpeed for {domain}...", flush=True)
+            try:
+                from execution.pagespeed_insights import fetch_pagespeed_scores
+                ps_result = fetch_pagespeed_scores(f"https://{domain}", strategy="mobile")
+                print(f"DEBUG save-audit: PageSpeed result = {ps_result is not None}", flush=True)
+                if ps_result:
+                    pagespeed = {
+                        'scores': {
+                            'performance': ps_result.get('scores', {}).get('performance', 0),
+                            'accessibility': ps_result.get('scores', {}).get('accessibility', 0),
+                            'best_practices': ps_result.get('scores', {}).get('best_practices', 0),
+                            'seo': ps_result.get('scores', {}).get('seo', 0),
+                        },
+                        'metrics': ps_result.get('metrics', {})
+                    }
+                    print(f"DEBUG save-audit: PageSpeed performance={pagespeed.get('scores', {}).get('performance')}", flush=True)
+                else:
+                    print(f"DEBUG save-audit: PageSpeed fetch returned None", flush=True)
+            except Exception as e:
+                print(f"DEBUG save-audit: PageSpeed error: {e}", flush=True)
+        else:
+            print(f"DEBUG save-audit: Domain is empty, skipping PageSpeed", flush=True)
+        
+        # Update with pages, pagespeed, and mark as completed
+        audit_data['pages'] = pages
+        audit_data['pagespeed'] = pagespeed
+        audit_data['status'] = 'completed'
+        
+        print(f"DEBUG save-audit: Saving to Supabase - pages count={len(audit_data.get('pages', []))}, pagespeed={pagespeed.get('performance', 'N/A')}", flush=True)
+        
+        # Save back to Supabase
+        supabase.table('projects').update({
+            'full_audit_data': audit_data
+        }).eq('id', audit_id).execute()
+        
+        print(f"DEBUG save-audit: Saved successfully for {audit_id}", flush=True)
+        
+        return jsonify({"success": True, "message": "Results saved"})
+        
+    except Exception as e:
+        log_debug(f"Error saving audit results: {e}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
@@ -312,6 +408,21 @@ def get_audit_detail_endpoint(audit_id):
         })
     except Exception as e:
         log_debug(f"Error fetching audit: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/audits/<audit_id>', methods=['DELETE'])
+def delete_audit_endpoint(audit_id):
+    """Delete an audit by project ID"""
+    if not supabase:
+        return jsonify({"error": "Supabase not configured"}), 500
+    
+    try:
+        # Delete from projects table
+        result = supabase.table('projects').delete().eq('id', audit_id).execute()
+        log_debug(f"Deleted audit {audit_id}")
+        return jsonify({"success": True, "message": "Audit deleted"})
+    except Exception as e:
+        log_debug(f"Error deleting audit: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/deep-audit/results/<task_id>', methods=['GET'])

@@ -1715,49 +1715,61 @@
             const pages = data.pages || [];
 
             // === TRAFFIC STATS ===
-            let totalTraffic = 0;
+            // Use accurate totals from domain metrics if available, otherwise calculate from keywords
+            let totalTraffic = data.total_traffic || 0;
             let totalVolume = 0;
-            let top3 = 0;
-            let top10 = 0;
+            let top3 = data.top_3_keywords || 0;
+            let top10 = data.top_10_keywords || 0;
             let needsWork = 0; // Keywords ranked > 20
             let positionSum = 0;
             let positionCount = 0;
+
+            // Calculate from keywords array (for needs_work and avg position, and as fallback)
+            let calculatedTraffic = 0;
+            let calculatedTop3 = 0;
+            let calculatedTop10 = 0;
 
             keywords.forEach(k => {
                 const serp = k?.ranked_serp_element?.serp_item || {};
                 const pos = k.position || serp.rank_absolute || 100;
                 const vol = k.volume || k.keyword_data?.keyword_info?.search_volume || 0;
 
-                totalTraffic += k.traffic_cost || serp.etv || 0;
+                calculatedTraffic += k.traffic_cost || serp.etv || 0;
                 totalVolume += vol;
 
                 if (pos <= 100) { positionSum += pos; positionCount++; }
-                if (pos <= 3) top3++;
-                if (pos <= 10) top10++;
+                if (pos <= 3) calculatedTop3++;
+                if (pos <= 10) calculatedTop10++;
                 if (pos > 20 && pos <= 100) needsWork++;
             });
+
+            // Use accurate totals if available, otherwise use calculated values
+            if (!totalTraffic) totalTraffic = calculatedTraffic;
+            if (!top3) top3 = calculatedTop3;
+            if (!top10) top10 = calculatedTop10;
 
             const statTraffic = document.getElementById('stat-traffic');
             if (statTraffic) statTraffic.textContent = Math.round(totalTraffic).toLocaleString();
 
-            const countToCheck = data.total_keywords || keywords.length;
+            // Use accurate total_keywords from domain metrics
+            const totalKeywords = data.total_keywords || keywords.length;
             const isAtLimit = data.keywords_at_limit || (keywords.length >= 1000);
-            const keywordDisplay = isAtLimit ? '1000+' : countToCheck.toLocaleString();
+            const keywordDisplay = totalKeywords > 1000 ? totalKeywords.toLocaleString() : (isAtLimit ? '1000+' : totalKeywords.toLocaleString());
 
             const statKeywords = document.getElementById('stat-keywords');
             if (statKeywords) statKeywords.textContent = keywordDisplay;
 
             const statTop3 = document.getElementById('stat-top3');
-            if (statTop3) statTop3.textContent = top3;
+            if (statTop3) statTop3.textContent = top3.toLocaleString();
 
             const statTop10 = document.getElementById('stat-top10');
-            if (statTop10) statTop10.textContent = top10;
+            if (statTop10) statTop10.textContent = top10.toLocaleString();
 
             const statAvgPos = document.getElementById('stat-avg-position');
             if (statAvgPos) statAvgPos.textContent = positionCount > 0 ? (positionSum / positionCount).toFixed(1) : 'N/A';
 
             const statNeedsWork = document.getElementById('stat-needs-work');
-            if (statNeedsWork) statNeedsWork.textContent = needsWork;
+            if (statNeedsWork) statNeedsWork.textContent = needsWork.toLocaleString();
 
             // === KEYWORDS TABLE ===
             const kwBody = document.getElementById('keywords-body');
