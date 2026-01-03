@@ -465,25 +465,48 @@ def analyze_readability(audit_id):
         # Get pages from audit data
         pages = audit_data.get('pages', [])
         
-        # Filter for blog/article pages with traffic
-        blog_pages = []
+        # Filter for blog/article pages
+        # Priority 1: High traffic pages that look like blogs
+        # Priority 2: Any high traffic pages (excluding homepage)
+        # Priority 3: Any inner pages (if no traffic data)
+        
+        candidates = []
+        
+        # Helper to check if URL is likely homepage
+        def is_homepage(u):
+            return u.strip('/').count('/') < 3 # primitive check, assumes https://domain.com is 2 slashes
+            
         for page in pages:
             url = page.get('url', '')
             traffic = page.get('traffic', 0)
-            # Look for pages that might be blog posts (contains /blog/, /article/, /post/, or date patterns)
-            if traffic > 0 and any(keyword in url.lower() for keyword in ['/blog/', '/article/', '/post/', '/news/', '20']):
-                blog_pages.append({'url': url, 'traffic': traffic})
+            
+            # Skip likely homepages for readability analysis
+            if is_homepage(url):
+                continue
+                
+            is_blog = any(keyword in url.lower() for keyword in ['/blog/', '/article/', '/post/', '/news/', '20'])
+            candidates.append({
+                'url': url,
+                'traffic': traffic,
+                'is_blog': is_blog
+            })
+            
+        # Sort candidates: Priority to is_blog, then traffic
+        # We assign a score: is_blog=1000000, + traffic
+        candidates.sort(key=lambda x: (1000000 if x['is_blog'] else 0) + x['traffic'], reverse=True)
         
-        # Sort by traffic and take top 2
-        blog_pages.sort(key=lambda x: x.get('traffic', 0), reverse=True)
-        top_pages = blog_pages[:2]
+        top_pages = candidates[:2]
         
         if not top_pages:
-            return jsonify({
-                "success": True,
-                "results": [],
-                "message": "No blog/article pages found with traffic data"
-            })
+             # Last resort: just take any pages if we filtered everything out (unlikely unless only homepage exists)
+             if pages:
+                 top_pages = [{'url': p.get('url'), 'traffic': 0} for p in pages[:2]]
+             else:
+                return jsonify({
+                    "success": True,
+                    "results": [],
+                    "message": "No pages found in audit data"
+                })
         
         # Return placeholder results (actual analysis would require fetching and parsing page content)
         results = []
