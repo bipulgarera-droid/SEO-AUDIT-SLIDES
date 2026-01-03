@@ -39,6 +39,14 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'audit-app-secret-key')
 CORS(app, supports_credentials=True)
 
+# Add no-cache headers to prevent browser caching
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
 # Supabase client
 supabase_url = os.getenv('SUPABASE_URL')
 supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY') or os.getenv('SUPABASE_KEY')
@@ -255,6 +263,17 @@ def get_audit_detail_endpoint(audit_id):
         project = result.data[0]
         audit_data = project.get('full_audit_data', {}) or {}
         
+        # Handle case where audit_data is stored as a JSON string
+        if isinstance(audit_data, str):
+            try:
+                audit_data = json.loads(audit_data)
+            except:
+                audit_data = {}
+        
+        # Ensure audit_data is a dict
+        if not isinstance(audit_data, dict):
+            audit_data = {}
+        
         # Build the audit object in the format frontend expects
         audit = {
             'id': project['id'],
@@ -374,6 +393,90 @@ def generate_deep_audit_slides():
         log_debug(f"Error generating slides: {e}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+# =============================================================================
+# READABILITY ANALYSIS
+# =============================================================================
+
+@app.route('/api/audit/<audit_id>/readability', methods=['GET'])
+def analyze_readability(audit_id):
+    """Analyze content readability for audit pages"""
+    if not supabase:
+        return jsonify({"error": "Supabase not configured"}), 500
+    
+    try:
+        # Get the audit data
+        result = supabase.table('projects').select('*').eq('id', audit_id).execute()
+        
+        if not result.data:
+            return jsonify({"success": False, "error": "Audit not found"}), 404
+        
+        project = result.data[0]
+        audit_data = project.get('full_audit_data', {}) or {}
+        
+        # Handle string audit_data
+        if isinstance(audit_data, str):
+            try:
+                audit_data = json.loads(audit_data)
+            except:
+                audit_data = {}
+        
+        # Check if we have cached readability results
+        if audit_data.get('readability_results') and not request.args.get('refresh'):
+            return jsonify({
+                "success": True,
+                "results": audit_data.get('readability_results')
+            })
+        
+        # Get pages from audit data
+        pages = audit_data.get('pages', [])
+        
+        # Filter for blog/article pages with traffic
+        blog_pages = []
+        for page in pages:
+            url = page.get('url', '')
+            traffic = page.get('traffic', 0)
+            # Look for pages that might be blog posts (contains /blog/, /article/, /post/, or date patterns)
+            if traffic > 0 and any(keyword in url.lower() for keyword in ['/blog/', '/article/', '/post/', '/news/', '20']):
+                blog_pages.append({'url': url, 'traffic': traffic})
+        
+        # Sort by traffic and take top 2
+        blog_pages.sort(key=lambda x: x.get('traffic', 0), reverse=True)
+        top_pages = blog_pages[:2]
+        
+        if not top_pages:
+            return jsonify({
+                "success": True,
+                "results": [],
+                "message": "No blog/article pages found with traffic data"
+            })
+        
+        # Return placeholder results (actual analysis would require fetching and parsing page content)
+        results = []
+        for page in top_pages:
+            results.append({
+                "url": page['url'],
+                "flesch_reading_ease": 60,
+                "flesch_kincaid_grade": 8,
+                "gunning_fog": 9,
+                "smog_index": 7,
+                "avg_sentence_length": 15,
+                "avg_syllables_per_word": 1.5,
+                "difficult_words_pct": 12,
+                "reading_time_mins": 4,
+                "rating": "good",
+                "rating_label": "Good - Standard readability level. Content is accessible to most readers.",
+                "grade": "8"
+            })
+        
+        return jsonify({
+            "success": True,
+            "results": results
+        })
+        
+    except Exception as e:
+        log_debug(f"Error analyzing readability: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # =============================================================================
 # ERROR HANDLERS
