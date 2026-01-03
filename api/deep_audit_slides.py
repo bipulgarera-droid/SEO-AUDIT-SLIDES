@@ -172,7 +172,13 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
         pages = raw_pages
     else:
         pages = []
-    summary = data.get('summary', {}).get('summary', {})
+    raw_summary = data.get('summary', {})
+    if isinstance(raw_summary, str):
+        try:
+            raw_summary = json.loads(raw_summary)
+        except:
+            raw_summary = {}
+    summary = raw_summary.get('summary', {}) if isinstance(raw_summary, dict) else {}
 
     # Create presentation
     presentation = {'title': f"SEO Strategy Deck - {domain}"}
@@ -370,7 +376,10 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
     # PERMISSIONS
     drive_service.permissions().create(fileId=pid, body={'type': 'anyone', 'role': 'reader'}).execute()
     
-    return f"https://docs.google.com/presentation/d/{pid}/edit"
+    return {
+        "presentation_id": pid,
+        "presentation_url": f"https://docs.google.com/presentation/d/{pid}/edit"
+    }
 
 # --- HELPER FUNCTIONS ---
 def generate_id():
