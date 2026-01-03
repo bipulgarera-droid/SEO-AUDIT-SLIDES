@@ -409,7 +409,22 @@ def generate_deep_audit_slides():
                 except:
                     pass # Keep as is if parse fails
 
-        domain = audit_data.get('domain', 'unknown')
+        # Ensure we have a valid domain for screenshot capture
+        domain = audit_data.get('domain')
+        if not domain or domain in ['unknown', 'Pending Audit']:
+            if project_id:
+                try:
+                    # Fetch fresh domain from project table
+                    p_res = supabase.table('projects').select('domain').eq('id', project_id).execute()
+                    if p_res.data:
+                        domain = p_res.data[0].get('domain')
+                        audit_data['domain'] = domain
+                except Exception as e:
+                    log_debug(f"Error resolving domain from project: {e}")
+        
+        if not domain:
+            domain = 'unknown'
+            
         log_debug(f"Generating slides for {domain}")
         
         # Get Google credentials
@@ -422,11 +437,13 @@ def generate_deep_audit_slides():
         if not screenshots:
             screenshots = {}
             
-        # Fallback: Capture homepage screenshot if missing
-        if 'homepage' not in screenshots and domain:
-            log_debug(f"Homepage screenshot missing, attempting backend capture for {domain}...")
+        # Fallback: Capture homepage screenshot if missing OR if it's too short (invalid)
+        is_homepage_missing = 'homepage' not in screenshots or not screenshots.get('homepage') or len(str(screenshots.get('homepage'))) < 100
+        
+        if is_homepage_missing and domain and domain != 'unknown':
+            log_debug(f"Homepage screenshot missing or invalid, attempting backend capture for {domain}...")
             try:
-                homepage_b64 = capture_screenshot_with_fallback(f"https://{domain}")
+                homepage_b64 = capture_screenshot_with_fallback(domain)
                 if homepage_b64:
                     screenshots['homepage'] = homepage_b64
                     log_debug("Backend homepage capture successful")
