@@ -8,3 +8,4 @@ supabase
 python-dotenv
 playwright
 textstat
+gunicorn==21.2.0
