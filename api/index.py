@@ -484,7 +484,8 @@ def analyze_readability(audit_id):
             if is_homepage(url):
                 continue
                 
-            is_blog = any(keyword in url.lower() for keyword in ['/blog/', '/article/', '/post/', '/news/', '20'])
+            # Broader keyword matching (remove trailing slash to catch /blogs/, /posts/ etc)
+            is_blog = any(keyword in url.lower() for keyword in ['/blog', '/article', '/post', '/news', '/insight', '/guide', '202'])
             candidates.append({
                 'url': url,
                 'traffic': traffic,
