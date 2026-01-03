@@ -752,15 +752,13 @@ def analyze_readability(audit_id):
                         
                         # Rating logic
                         flesch = textstat.flesch_reading_ease(text)
-                        if flesch > 60:
+                        # Use grade score for rating (user preference)
+                        if grade_score <= 9:
                             rating = "good"
-                            rating_label = "Good - Standard readability level. Content is accessible to most readers."
-                        elif flesch > 30:
-                            rating = "fair"
-                            rating_label = "Fair - Somewhat difficult. May require high school education."
+                            rating_label = "Content readability is apt."
                         else:
                             rating = "poor"
-                            rating_label = "Poor - Very difficult. Best for academic or technical audiences."
+                            rating_label = "Page readability is poor. Needs improvement."
                             
                         results.append({
                             "url": url,
@@ -790,6 +788,16 @@ def analyze_readability(audit_id):
                 "success": False, 
                 "message": "Could not analyze content. Pages may be blocking crawlers or have insufficient text."
             })
+        
+        # Save results to Supabase for slides to use later
+        try:
+            audit_data['readability_results'] = results
+            supabase.table('projects').update({
+                'full_audit_data': audit_data
+            }).eq('id', audit_id).execute()
+            log_debug(f"Saved readability results for {audit_id}")
+        except Exception as e:
+            log_debug(f"Failed to save readability results: {e}")
         
         return jsonify({
             "success": True,

@@ -112,14 +112,20 @@ def get_keywords_annotation(count, needs_work_count=0):
 def get_backlinks_annotation(referring_domains, high_spam_count=0):
     """Returns annotation based on referring domains and spam level."""
     referring_domains = referring_domains or 0
+    high_spam_count = high_spam_count or 0
+    
+    # Less than 100 domains = needs more links
     if referring_domains < 100:
         return "⚠️ Needs Link Building"
-    elif high_spam_count > 20:
+    
+    # Has enough domains - focus on quality/spam
+    if high_spam_count > 10:
         return "🔴 Many High Spam Backlinks"
     elif referring_domains >= 500:
         return "✅ Strong Link Profile"
     else:
-        return "📈 Building Authority"
+        return "✅ Healthy Link Profile"  # Changed from "Building Authority"
+
 
 def get_speed_annotation(score):
     """Returns annotation based on PageSpeed score. Poor only if < 90."""
@@ -423,10 +429,13 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
     if screenshots and screenshots.get('content_readability'):
         # Get average readability grade from data if available
         readability_results = data.get('readability_results', [])
+        print(f"DEBUG SLIDES: readability_results type: {type(readability_results)}, len: {len(readability_results) if isinstance(readability_results, list) else 'N/A'}", file=sys.stderr)
         avg_grade = 0
         if readability_results:
             grades = [r.get('flesch_kincaid_grade', 0) for r in readability_results if isinstance(r, dict)]
+            print(f"DEBUG SLIDES: grades extracted: {grades}", file=sys.stderr)
             avg_grade = sum(grades) / len(grades) if grades else 0
+        print(f"DEBUG SLIDES: avg_grade = {avg_grade}, annotation = {get_readability_annotation(avg_grade)}", file=sys.stderr)
         content_annotation = get_readability_annotation(avg_grade)
         requests.extend(create_slide_image(generate_id(), "CONTENT ANALYSIS", screenshots['content_readability'], content_annotation))
 
