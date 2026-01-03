@@ -612,7 +612,7 @@ def analyze_readability(audit_id):
                 continue
                 
             # 3. Identify blog pages
-            blog_keywords = ['/blog', '/article', '/post', '/news', '/insight', '/guide', '202']
+            blog_keywords = ['/blog', '/blogs', '/article', '/post', '/news', '/insight', '/guide', '202']
             is_blog = any(keyword in url.lower() for keyword in blog_keywords)
             
             candidates.append({
