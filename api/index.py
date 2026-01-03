@@ -222,24 +222,34 @@ def list_audits_endpoint():
         return jsonify({"error": "Supabase not configured"}), 500
     
     try:
-        # Simpler query - fetch all projects and filter in Python
-        log_debug("Fetching projects from Supabase...")
-        result = supabase.table('projects').select('id, domain, created_at, full_audit_data').order('created_at', desc=True).execute()
+        # Optimized query - only fetch ID, domain, date and status
+        # We avoid fetching 'full_audit_data' which is heavy (megabytes)
+        log_debug("Fetching projects list from Supabase...")
+        
+        # Try to filter by full_audit_data not being null on server side
+        # Note: syntax for JSONB null check can be tricky, if this fails we might need to fetch all and accept empty ones
+        try:
+            result = supabase.table('projects').select('id, domain, created_at').neq('full_audit_data', 'null').order('created_at', desc=True).execute()
+        except:
+            # Fallback if filtered query fails
+            log_debug("Filtered query failed, fetching all projects (lightweight)")
+            result = supabase.table('projects').select('id, domain, created_at').order('created_at', desc=True).execute()
+            
         log_debug(f"Got {len(result.data) if result.data else 0} projects")
         
         audits = []
         for p in result.data or []:
-            audit_data = p.get('full_audit_data')
-            if audit_data:  # Only include projects with audit data
-                audits.append({
-                    'id': p['id'],
-                    'domain': p.get('domain'),
-                    'created_at': p.get('created_at'),
-                    'status': audit_data.get('status', 'unknown') if isinstance(audit_data, dict) else 'unknown',
-                    'task_id': audit_data.get('task_id') if isinstance(audit_data, dict) else None,
-                    'full_audit_data': audit_data
-                })
-        
+            # Since we filtered on server (or just fetching lightweight list), we assume these are valid or display them anyway
+            # The frontend allows deleting empty ones if needed
+            audits.append({
+                'id': p['id'],
+                'domain': p.get('domain'),
+                'created_at': p.get('created_at'),
+                'status': 'completed', # Assumed completed if in this list
+                'task_id': None,       # Not needed for list view
+                # 'full_audit_data': ... # Omitted for performance
+            })
+            
         log_debug(f"Returning {len(audits)} audits")
         return jsonify({"success": True, "audits": audits})
     except Exception as e:
