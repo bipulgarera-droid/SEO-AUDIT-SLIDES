@@ -1474,3 +1474,52 @@ if __name__ == "__main__":
     # Test the client (requires credentials in env)
     print("DataForSEO Client loaded. Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to use.")
 
+def capture_screenshot_via_dataforseo(url: str, browser_preset: str = "desktop_chrome") -> Optional[str]:
+    """
+    Capture a high-quality screenshot using DataForSEO On-Page Screenshot API.
+    This bypasses local headless browser issues by using DataForSEO's infrastructure.
+    
+    Args:
+        url: URL to screenshot
+        browser_preset: 'desktop_chrome', 'mobile_chrome', 'desktop_firefox', etc.
+        
+    Returns:
+        URL of the screenshot (DataForSEO hosted) or None
+    """
+    endpoint = f"{DATAFORSEO_API_URL}/on_page/page_screenshot"
+    
+    payload = [{
+        "url": url,
+        "browser_preset": browser_preset,
+        "full_page_screenshot": False  # Viewport only usually preferred for slides
+        # Note: DataForSEO might default to full page, but we can't control viewport finely with preset
+    }]
+    
+    try:
+        print(f"DEBUG: Requesting DataForSEO screenshot for {url}")
+        response = requests.post(
+            endpoint,
+            headers={**get_auth_header(), "Content-Type": "application/json"},
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status_code') == 20000 and data.get('tasks'):
+            result = (data['tasks'][0].get('result') or [{}])[0] or {}
+            image_url = result.get('image')
+            
+            if image_url:
+                print(f"DEBUG: DataForSEO screenshot success: {image_url}")
+                return image_url
+            else:
+                print(f"DEBUG: DataForSEO returned empty image URL")
+                return None
+        else:
+            print(f"DEBUG: DataForSEO error: {data.get('status_message')}")
+            return None
+            
+    except Exception as e:
+        print(f"ERROR: DataForSEO screenshot failed: {e}")
+        return None

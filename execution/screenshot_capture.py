@@ -105,23 +105,30 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
         print(f"SUCCESS: Playwright capture successful for {url}")
         return result
     
-    # Method 2: PageSpeed API fallback (DISABLED to ensure high quality)
-    # print(f"WARNING: Playwright failed for {url}, falling back to lower-quality PageSpeed API")
-    # try:
-    #     from execution.pagespeed_insights import fetch_screenshot
-    #     screenshot_path = fetch_screenshot(url)
-    #     
-    #     if screenshot_path and os.path.exists(screenshot_path):
-    #         with open(screenshot_path, 'rb') as f:
-    #             screenshot_bytes = f.read()
-    #         print(f"DEBUG: PageSpeed fallback successful for {url} ({len(screenshot_bytes)} bytes)")
-    #         # Important: Pagespeed returns JPEG thumbnails usually
-    #         return f"data:image/jpeg;base64,{base64.b64encode(screenshot_bytes).decode()}"
-    # except Exception as e:
-    #     print(f"ERROR PageSpeed fallback failed for {url}: {e}")
+    # Method 2: DataForSEO API Fallback (High Quality)
+    print(f"WARNING: Playwright failed for {url}, attempting DataForSEO fallback")
+    try:
+        from api.dataforseo_client import capture_screenshot_via_dataforseo
+        import requests
+        
+        image_url = capture_screenshot_via_dataforseo(url)
+        if image_url:
+            # Fetch the image content to convert to base64
+            # DataForSEO returns a URL to the image file
+            print(f"DEBUG: Fetching image from {image_url}")
+            img_resp = requests.get(image_url, timeout=30)
+            if img_resp.status_code == 200:
+                img_b64 = base64.b64encode(img_resp.content).decode()
+                # DataForSEO usually returns PNG or JPG, we can default to jpg/png
+                # The browser preset 'desktop_chrome' usually implies standard format.
+                return f"data:image/png;base64,{img_b64}"
+            else:
+                print(f"ERROR: Failed to download DataForSEO image: {img_resp.status_code}")
+    except Exception as e:
+        print(f"ERROR DataForSEO fallback failed for {url}: {e}")
     
     # Method 3: All failed - return None (slide will be skipped)
-    print(f"CRITICAL: Playwright capture failed for {url}. Skipping fallback to ensure quality.")
+    print(f"CRITICAL: All screenshot methods failed for {url}")
     return None
 
 
