@@ -115,8 +115,21 @@ def get_google_credentials():
     if sa_creds:
         return sa_creds
     
-    # Fall back to OAuth for local development
+    # Fall back to OAuth for local development (or manual env var in production)
     token_file = os.path.join(PROJECT_ROOT, "token.json")
+    
+    # Check for token in env var (easier deployment for OAuth users)
+    env_token = os.getenv('GOOGLE_TOKEN_JSON')
+    if env_token and not os.path.exists(token_file):
+        try:
+            # Validate it's JSON
+            json.loads(env_token)
+            with open(token_file, "w") as f:
+                f.write(env_token)
+            print("Created token.json from GOOGLE_TOKEN_JSON env var")
+        except Exception as e:
+            print(f"Error processing GOOGLE_TOKEN_JSON: {e}")
+
     if os.path.exists(token_file):
         try:
             creds = Credentials.from_authorized_user_file(token_file, SCOPES)
