@@ -110,21 +110,15 @@ def get_keywords_annotation(count, needs_work_count=0):
         return "⚠️ Limited Keywords"
 
 def get_backlinks_annotation(referring_domains, high_spam_count=0):
-    """Returns annotation based on referring domains and spam level."""
+    """Returns annotation based on referring domains."""
     referring_domains = referring_domains or 0
-    high_spam_count = high_spam_count or 0
     
     # Less than 100 domains = needs more links
     if referring_domains < 100:
         return "⚠️ Needs Link Building"
-    
-    # Has enough domains - focus on quality/spam
-    if high_spam_count > 10:
-        return "🔴 Many High Spam Backlinks"
-    elif referring_domains >= 500:
-        return "✅ Strong Link Profile"
     else:
-        return "✅ Healthy Link Profile"  # Changed from "Building Authority"
+        # >= 100 domains: focus on spam as the improvement area
+        return "🔴 Many High Spam Backlinks"
 
 
 def get_speed_annotation(score):
