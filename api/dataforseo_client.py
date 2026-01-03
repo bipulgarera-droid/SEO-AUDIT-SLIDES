@@ -1490,9 +1490,7 @@ def capture_screenshot_via_dataforseo(url: str, browser_preset: str = "desktop_c
     
     payload = [{
         "url": url,
-        "browser_preset": browser_preset,
-        "full_page_screenshot": False  # Viewport only usually preferred for slides
-        # Note: DataForSEO might default to full page, but we can't control viewport finely with preset
+        "full_page_screenshot": False
     }]
     
     try:
@@ -1508,14 +1506,16 @@ def capture_screenshot_via_dataforseo(url: str, browser_preset: str = "desktop_c
         
         if data.get('status_code') == 20000 and data.get('tasks'):
             result = (data['tasks'][0].get('result') or [{}])[0] or {}
-            image_url = result.get('image')
+            items = result.get('items') or []
             
-            if image_url:
-                print(f"DEBUG: DataForSEO screenshot success: {image_url}")
-                return image_url
-            else:
-                print(f"DEBUG: DataForSEO returned empty image URL")
-                return None
+            if items and len(items) > 0:
+                image_url = items[0].get('image')
+                if image_url:
+                    print(f"DEBUG: DataForSEO screenshot success: {image_url}")
+                    return image_url
+            
+            print(f"DEBUG: DataForSEO returned valid response but no image found in items: {result}")
+            return None
         else:
             print(f"DEBUG: DataForSEO error: {data.get('status_message')}")
             return None
