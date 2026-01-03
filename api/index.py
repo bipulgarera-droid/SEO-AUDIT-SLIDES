@@ -255,12 +255,29 @@ def get_audit_detail_endpoint(audit_id):
         project = result.data[0]
         audit_data = project.get('full_audit_data', {}) or {}
         
+        # Build the audit object in the format frontend expects
+        audit = {
+            'id': project['id'],
+            'domain': project.get('domain'),
+            'created_at': project.get('created_at'),
+            # Frontend expects these specific fields from the audit data:
+            'keywords': audit_data.get('organic_keywords', []),
+            'pages': audit_data.get('pages', []),
+            'backlinks': audit_data.get('backlinks', audit_data.get('backlinks_summary', {})),
+            'backlinks_summary': audit_data.get('backlinks_summary', audit_data.get('backlinks', {})),
+            'referring_domains': audit_data.get('referring_domains', []),
+            'pagespeed': audit_data.get('pagespeed', {}),
+            'issues': audit_data.get('issues', {}),
+            'estimated_traffic': audit_data.get('estimated_traffic', 0),
+            'total_keywords': audit_data.get('total_keywords', len(audit_data.get('organic_keywords', []))),
+            'keywords_at_limit': audit_data.get('keywords_at_limit', False),
+            # Include full data for any other access patterns
+            **audit_data
+        }
+        
         return jsonify({
             "success": True,
-            "project_id": project['id'],
-            "domain": project.get('domain'),
-            "created_at": project.get('created_at'),
-            "audit_data": audit_data
+            "audit": audit
         })
     except Exception as e:
         log_debug(f"Error fetching audit: {e}")
