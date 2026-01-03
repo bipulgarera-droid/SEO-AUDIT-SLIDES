@@ -414,9 +414,18 @@ def generate_deep_audit_slides():
                 import base64
                 import uuid
                 
-                # Ensure bucket exists (optional, might need manual creation)
+                # Ensure bucket exists (try to create if missing, though typically needs admin/service role)
                 bucket_name = 'audit-screenshots'
-                
+                try:
+                    buckets = supabase.storage.list_buckets()
+                    existing_buckets = [b.name for b in buckets]
+                    if bucket_name not in existing_buckets:
+                        log_debug(f"Creating bucket {bucket_name}...")
+                        supabase.storage.create_bucket(bucket_name, options={"public": True})
+                except Exception as e:
+                    # Ignore error, might be permission issue or already exists
+                    log_debug(f"Bucket check/creation warning: {e}")
+
                 for key, data_uri in screenshots.items():
                     try:
                         # Skip if already a URL
