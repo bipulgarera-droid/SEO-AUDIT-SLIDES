@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Import local modules
 from dataforseo_client import (
     start_onpage_audit, get_audit_status, get_audit_summary,
-    fetch_ranked_keywords, fetch_backlinks_summary, get_referring_domains
+    fetch_ranked_keywords, fetch_backlinks_summary, get_referring_domains,
+    get_lighthouse_audit
 )
 from deep_audit_slides import create_deep_audit_slides
 from google_auth import get_google_credentials
@@ -541,7 +542,15 @@ def analyze_readability(audit_id):
                 "results": audit_data.get('readability_results')
             })
         
-        # Get pages from audit data
+        # Ensure critical fields are parsed if they are strings
+        for field in ['pages', 'organic_keywords']:
+            if isinstance(audit_data.get(field), str):
+                try:
+                    audit_data[field] = json.loads(audit_data[field])
+                except:
+                    audit_data[field] = []
+
+        # Extract pages and keywords
         pages = audit_data.get('pages', [])
         
         # Filter for blog/article pages
@@ -614,6 +623,70 @@ def analyze_readability(audit_id):
     except Exception as e:
         log_debug(f"Error analyzing readability: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/audit/<audit_id>/refresh-speed', methods=['POST'])
+def refresh_speed(audit_id):
+    """Refresh PageSpeed metrics for a specific audit"""
+    if not supabase:
+        return jsonify({"error": "Supabase not configured"}), 500
+    
+    try:
+        # Get project
+        project_res = supabase.table('projects').select('*').eq('id', audit_id).execute()
+        
+        project = project_res.data[0] if project_res.data else None
+        if not project:
+             return jsonify({"error": "Audit not found"}), 404
+
+        full_audit_data = project.get('full_audit_data', {})
+        if isinstance(full_audit_data, str):
+             try:
+                 full_audit_data = json.loads(full_audit_data)
+             except:
+                 full_audit_data = {}
+
+        domain = project.get('domain')
+        if not domain:
+             return jsonify({"error": "No domain found"}), 400
+        
+        # Ensure URL has protocol
+        url = f"https://{domain}" if not domain.startswith('http') else domain
+        
+        log_debug(f"Refreshing speed for {url}")
+        lh_data = get_lighthouse_audit(url)
+        
+        if not lh_data.get('success'):
+             return jsonify({"error": lh_data.get('error')}), 500
+             
+        # Format for frontend
+        pagespeed_data = {
+            "scores": lh_data.get('scores', {}),
+            "metrics": {
+                 "lcp": lh_data['core_web_vitals'].get('lcp'),
+                 "fcp": lh_data['core_web_vitals'].get('fcp'),
+                 "cls": lh_data['core_web_vitals'].get('cls'),
+                 "tbt": lh_data['core_web_vitals'].get('tbt'),
+                 "speed_index": lh_data['core_web_vitals'].get('speed_index'),
+                 "si-value": lh_data['core_web_vitals'].get('speed_index')
+            }
+        }
+        
+        full_audit_data['pagespeed'] = pagespeed_data
+        
+        supabase.table('projects').update({
+             'full_audit_data': full_audit_data
+        }).eq('id', project['id']).execute()
+        
+        return jsonify({
+            "success": True, 
+            "scores": pagespeed_data['scores'],
+            "metrics": pagespeed_data['metrics']
+        })
+
+    except Exception as e:
+        log_debug(f"Error refreshing speed: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 # =============================================================================
 # ERROR HANDLERS

@@ -533,7 +533,8 @@ def get_lighthouse_audit(url: str) -> Dict[str, Any]:
                     "cls": audits.get('cumulative-layout-shift', {}).get('displayValue'),
                     "fcp": audits.get('first-contentful-paint', {}).get('displayValue'),
                     "tti": audits.get('interactive', {}).get('displayValue'),
-                    "tbt": audits.get('total-blocking-time', {}).get('displayValue')
+                    "tbt": audits.get('total-blocking-time', {}).get('displayValue'),
+                    "speed_index": audits.get('speed-index', {}).get('displayValue')
                 }
             }
         else:
