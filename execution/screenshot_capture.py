@@ -31,8 +31,11 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
         print(f"DEBUG: Capturing screenshot for {url} at {width}x{height}")
         
         with sync_playwright() as p:
-            # Launch headless browser
-            browser = p.chromium.launch(headless=True)
+            # Launch headless browser with sandbox disabled (critical for Railway/Docker)
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox']
+            )
             
             # Create context with viewport size
             context = browser.new_context(
