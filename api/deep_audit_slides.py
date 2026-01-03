@@ -80,35 +80,49 @@ def get_traffic_annotation(traffic):
     traffic = traffic or 0
     if traffic >= 50000:
         return "✅ Strong Organic Traffic"
-    elif traffic >= 10000:
+    elif traffic >= 20000:
         return "📈 Good Traffic Growth"
-    elif traffic >= 1000:
-        return "⚠️ Moderate Traffic"
     else:
         return "🔴 Low Organic Traffic"
 
-def get_keywords_annotation(count):
-    """Returns annotation based on keyword count."""
+def get_traffic_annotation_with_needs_work(traffic, needs_work_count):
+    """Returns annotation - uses needs_work count if traffic >= 20k."""
+    traffic = traffic or 0
+    if traffic >= 50000:
+        return "✅ Strong Organic Traffic"
+    elif traffic >= 20000:
+        # Show needs work count instead of "low traffic"
+        return f"⚠️ {needs_work_count} Keywords Need Work"
+    else:
+        return "🔴 Low Organic Traffic"
+
+def get_keywords_annotation(count, needs_work_count=0):
+    """Returns annotation based on keyword count and ranking quality."""
     count = count or 0
-    if count >= 1000:
+    # If many keywords are ranking poorly (21+), show potential message
+    if needs_work_count > count * 0.3:  # More than 30% need work
+        return "📈 Has potential for more visitors"
+    elif count >= 1000:
         return "✅ Strong Keyword Portfolio"
     elif count >= 100:
-        return "📈 Growing Visibility"
+        return "📈 Has potential for more visitors"
     else:
         return "⚠️ Limited Keywords"
 
-def get_backlinks_annotation(count):
-    """Returns annotation based on backlink count."""
-    count = count or 0
-    if count >= 1000:
-        return "✅ Strong Link Profile"
-    elif count >= 100:
-        return "📈 Building Authority"
-    else:
+def get_backlinks_annotation(referring_domains, high_spam_count=0):
+    """Returns annotation based on referring domains and spam level."""
+    referring_domains = referring_domains or 0
+    if referring_domains < 100:
         return "⚠️ Needs Link Building"
+    elif high_spam_count > 20:
+        return "🔴 Many High Spam Backlinks"
+    elif referring_domains >= 500:
+        return "✅ Strong Link Profile"
+    else:
+        return "📈 Building Authority"
 
 def get_speed_annotation(score):
-    """Returns annotation based on PageSpeed score."""
+    """Returns annotation based on PageSpeed score. Poor only if < 90."""
     score = score or 0
     if score >= 90:
         return "✅ Excellent Speed"
@@ -116,6 +130,14 @@ def get_speed_annotation(score):
         return "⚠️ Needs Optimization"
     else:
         return "🔴 Poor Performance"
+
+def get_readability_annotation(grade):
+    """Returns annotation based on readability grade."""
+    grade = grade or 0
+    if grade > 9:
+        return "🔴 Poor Page Readability"
+    else:
+        return "✅ Content Readability is Apt"
 
 def get_issues_annotation(issue_count, issue_type):
     """Returns annotation based on issue count."""
@@ -218,6 +240,20 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
     pos_4_10 = organic_metrics.get('pos_4_10', 0) or 0
     top_10_count = pos_1 + pos_2_3 + pos_4_10
     
+    # Calculate needs_work count (keywords ranking 21+)
+    needs_work_count = 0
+    for kw in keywords:
+        pos = kw.get('position', 100)
+        if not pos:
+            serp_item = kw.get('ranked_serp_element', {}).get('serp_item', {})
+            pos = serp_item.get('rank_absolute', 100)
+        if pos and pos > 20 and pos <= 100:
+            needs_work_count += 1
+    
+    # Calculate high spam backlink count for backlink annotation
+    referring_domains = backlinks.get('referring_domains', 0) or 0
+    high_spam_count = 0  # Would need to be passed from frontend or calculated from data
+    
     # Setup annotations (use Gemini-generated or defaults)
     if not annotations:
         annotations = {}
@@ -239,14 +275,14 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
 
     # Slide: SEO Overview (Traffic/DR)
     if screenshots and screenshots.get('traffic_overview'):
-        seo_annotation = annotations.get('seo_overview', get_traffic_annotation(total_traffic))
+        seo_annotation = annotations.get('seo_overview', get_traffic_annotation_with_needs_work(total_traffic, needs_work_count))
         requests.extend(create_slide_image(generate_id(), "SEO OVERVIEW", screenshots['traffic_overview'], seo_annotation))
     else:
         requests.extend(create_slide_traffic_dashboard(generate_id(), rank_overview, backlinks, domain, keywords))
 
     # Slide: Organic Keywords Report OR Table
     if screenshots and screenshots.get('keywords_report'):
-        kw_annotation = annotations.get('keywords_report', get_keywords_annotation(total_keywords))
+        kw_annotation = annotations.get('keywords_report', get_keywords_annotation(total_keywords, needs_work_count))
         requests.extend(create_slide_image(generate_id(), "ORGANIC KEYWORDS", screenshots['keywords_report'], kw_annotation))
     else:
         requests.extend(create_slide_kw_table(generate_id(), keywords[:7]))
@@ -354,13 +390,13 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
         heading_bullets = []
         if no_h1_count > 0: heading_bullets.append(f"{no_h1_count} pages missing H1")
         if multi_h1_count > 0: heading_bullets.append(f"{multi_h1_count} pages with multiple H1s")
-        if dup_h1_count > 0: heading_bullets.append(f"{dup_h1_count} pages with duplicate H1")
+        if dup_h1_count > 0: heading_bullets.append(f"{dup_h1_count} duplicate H1 headings found")
         if no_h2_count > 0: heading_bullets.append(f"{no_h2_count} pages missing H2")
         if many_h2_count > 0: heading_bullets.append(f"{many_h2_count} pages with too many H2")
-        if dup_h2_count > 0: heading_bullets.append(f"{dup_h2_count} pages with duplicate H2")
+        if dup_h2_count > 0: heading_bullets.append(f"{dup_h2_count} duplicate H2 headings found")
         if no_h3_count > 0: heading_bullets.append(f"{no_h3_count} pages missing H3")
         if many_h3_count > 0: heading_bullets.append(f"{many_h3_count} pages with too many H3")
-        if dup_h3_count > 0: heading_bullets.append(f"{dup_h3_count} pages with duplicate H3")
+        if dup_h3_count > 0: heading_bullets.append(f"{dup_h3_count} duplicate H3 headings found")
         
         if not heading_bullets: heading_bullets = ["No major heading issues found"]
         
@@ -374,8 +410,7 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
 
     # Slide: Backlinks
     if screenshots and screenshots.get('backlinks'):
-        total_backlinks = backlinks.get('total_count', 0) or 0
-        backlinks_annotation = annotations.get('backlinks', get_backlinks_annotation(total_backlinks))
+        backlinks_annotation = annotations.get('backlinks', get_backlinks_annotation(referring_domains, high_spam_count))
         requests.extend(create_slide_image(generate_id(), "BACKLINK PROFILE", screenshots['backlinks'], backlinks_annotation))
 
     # --- SECTION 5: CONTENT READABILITY ---
@@ -386,7 +421,14 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
 
     # Slide: Content Readability
     if screenshots and screenshots.get('content_readability'):
-        requests.extend(create_slide_image(generate_id(), "CONTENT ANALYSIS", screenshots['content_readability'], "Hemingway Analysis"))
+        # Get average readability grade from data if available
+        readability_results = data.get('readability_results', [])
+        avg_grade = 0
+        if readability_results:
+            grades = [r.get('flesch_kincaid_grade', 0) for r in readability_results if isinstance(r, dict)]
+            avg_grade = sum(grades) / len(grades) if grades else 0
+        content_annotation = get_readability_annotation(avg_grade)
+        requests.extend(create_slide_image(generate_id(), "CONTENT ANALYSIS", screenshots['content_readability'], content_annotation))
 
     # --- SECTION 6: WEBSITE SPEED ---
 
@@ -396,7 +438,17 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
 
     # Slide: Website Speed
     if screenshots and screenshots.get('speed_analysis'):
-        speed_annotation = annotations.get('speed_analysis', get_speed_annotation(0))
+        # Get actual performance score from pagespeed data
+        pagespeed_data = data.get('pagespeed', {})
+        if isinstance(pagespeed_data, str):
+            try:
+                import json
+                pagespeed_data = json.loads(pagespeed_data)
+            except:
+                pagespeed_data = {}
+        scores = pagespeed_data.get('scores', {})
+        performance_score = scores.get('performance', 0) or 0
+        speed_annotation = annotations.get('speed_analysis', get_speed_annotation(performance_score))
         requests.extend(create_slide_image(generate_id(), "WEBSITE SPEED", screenshots['speed_analysis'], speed_annotation))
     else:
         avg_load_time = sum(p.get('load_time', 0) for p in pages) / max(1, len(pages)) if pages else 0
