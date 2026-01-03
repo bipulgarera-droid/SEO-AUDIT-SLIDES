@@ -364,6 +364,7 @@ def get_deep_audit_results(task_id):
 # =============================================================================
 
 @app.route('/api/deep-audit/slides', methods=['POST'])
+@app.route('/api/deep-audit/generate-slides', methods=['POST'])
 def generate_deep_audit_slides():
     """Generate Google Slides presentation from audit data"""
     try:
