@@ -207,28 +207,37 @@ def deep_audit_status(task_id):
 @app.route('/api/audits/list', methods=['GET'])
 def list_audits_endpoint():
     """List all audits"""
+    log_debug("list_audits_endpoint called")
+    
     if not supabase:
+        log_debug("Supabase not configured")
         return jsonify({"error": "Supabase not configured"}), 500
     
     try:
-        # source parameter is optional, we ignore it and return all audits with full_audit_data
-        result = supabase.table('projects').select('id, domain, created_at, full_audit_data').not_.is_('full_audit_data', 'null').order('created_at', desc=True).execute()
+        # Simpler query - fetch all projects and filter in Python
+        log_debug("Fetching projects from Supabase...")
+        result = supabase.table('projects').select('id, domain, created_at, full_audit_data').order('created_at', desc=True).execute()
+        log_debug(f"Got {len(result.data) if result.data else 0} projects")
         
         audits = []
         for p in result.data or []:
-            audit_data = p.get('full_audit_data', {}) or {}
-            audits.append({
-                'id': p['id'],
-                'domain': p.get('domain'),
-                'created_at': p.get('created_at'),
-                'status': audit_data.get('status', 'unknown'),
-                'task_id': audit_data.get('task_id'),
-                'full_audit_data': audit_data  # Include full data for frontend
-            })
+            audit_data = p.get('full_audit_data')
+            if audit_data:  # Only include projects with audit data
+                audits.append({
+                    'id': p['id'],
+                    'domain': p.get('domain'),
+                    'created_at': p.get('created_at'),
+                    'status': audit_data.get('status', 'unknown') if isinstance(audit_data, dict) else 'unknown',
+                    'task_id': audit_data.get('task_id') if isinstance(audit_data, dict) else None,
+                    'full_audit_data': audit_data
+                })
         
+        log_debug(f"Returning {len(audits)} audits")
         return jsonify({"audits": audits})
     except Exception as e:
         log_debug(f"Error listing audits: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/audits/<audit_id>', methods=['GET'])
