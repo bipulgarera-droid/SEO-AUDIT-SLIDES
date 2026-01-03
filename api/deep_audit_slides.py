@@ -259,18 +259,25 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
 
     # Slide: Meta Issues Screenshot + Bullets
     if screenshots and screenshots.get('meta_issues'):
-        # Calculate counts
+        # Calculate counts directly from page metadata (robust fallback)
         if issue_counts:
             title_too_long_count = issue_counts.get('titleTooLong', 0)
             missing_desc_count = issue_counts.get('noDesc', 0)
             desc_too_long_count = issue_counts.get('descTooLong', 0)
-            title_short_count = 0
         else:
-             title_too_long_count = len([p for p in pages if p.get('issues', {}).get('title_too_long')])
-             missing_desc_count = len([p for p in pages if p.get('issues', {}).get('no_description')])
-             desc_too_long_count = len([p for p in pages if p.get('issues', {}).get('description_too_long')])
-             title_short_count = len([p for p in pages if p.get('issues', {}).get('title_too_short')])
-        
+            title_too_long_count = 0
+            missing_desc_count = 0
+            desc_too_long_count = 0
+            
+            for p in pages:
+                meta = p.get('meta', {}) if isinstance(p.get('meta'), dict) else {}
+                title = meta.get('title') or p.get('title') or ''
+                desc = meta.get('description') or p.get('description') or ''
+                
+                if len(title) > 60: title_too_long_count += 1
+                if not desc or len(desc) < 5: missing_desc_count += 1
+                elif len(desc) > 160: desc_too_long_count += 1
+    
         meta_bullets = []
         if title_too_long_count > 0: meta_bullets.append(f"{title_too_long_count} pages with titles too long")
         if missing_desc_count > 0: meta_bullets.append(f"{missing_desc_count} pages missing description")
@@ -303,15 +310,46 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
              dup_h2_count = issue_counts.get('dupH2', 0)
              dup_h3_count = issue_counts.get('dupH3', 0)
         else:
-             no_h1_count = len([p for p in pages if p.get('issues', {}).get('no_h1')])
-             multi_h1_count = len([p for p in pages if p.get('issues', {}).get('multiple_h1')])
-             no_h2_count = len([p for p in pages if p.get('issues', {}).get('no_h2')])
+             no_h1_count = 0
+             multi_h1_count = 0
+             no_h2_count = 0
              many_h2_count = 0
              no_h3_count = 0
              many_h3_count = 0
              dup_h1_count = 0
              dup_h2_count = 0
              dup_h3_count = 0
+             
+             h1_map, h2_map, h3_map = {}, {}, {}
+             
+             for p in pages:
+                 meta = p.get('meta', {}) if isinstance(p.get('meta'), dict) else {}
+                 h1_list = meta.get('h1') or p.get('h1') or []
+                 h2_list = meta.get('h2') or p.get('h2') or []
+                 h3_list = meta.get('h3') or p.get('h3') or []
+                 
+                 h1_cnt = len(h1_list) if isinstance(h1_list, list) else (1 if h1_list else 0)
+                 h2_cnt = meta.get('h2_count') or p.get('h2_count') or (len(h2_list) if isinstance(h2_list, list) else 0)
+                 h3_cnt = meta.get('h3_count') or p.get('h3_count') or (len(h3_list) if isinstance(h3_list, list) else 0)
+                 
+                 if h1_cnt == 0: no_h1_count += 1
+                 if h1_cnt > 1: multi_h1_count += 1
+                 if h2_cnt == 0: no_h2_count += 1
+                 if h2_cnt > 10: many_h2_count += 1
+                 if h3_cnt == 0: no_h3_count += 1
+                 if h3_cnt > 15: many_h3_count += 1
+                 
+                 # Duplicate tracking (simplified version of JS logic)
+                 for tag_list, tag_map in [(h1_list, h1_map), (h2_list, h2_map), (h3_list, h3_map)]:
+                     if isinstance(tag_list, list):
+                         for val in tag_list:
+                             key = str(val).lower().strip()
+                             if len(key) > 3:
+                                 tag_map[key] = tag_map.get(key, 0) + 1
+             
+             dup_h1_count = len([k for k, v in h1_map.items() if v > 1])
+             dup_h2_count = len([k for k, v in h2_map.items() if v > 1])
+             dup_h3_count = len([k for k, v in h3_map.items() if v > 1])
 
         heading_bullets = []
         if no_h1_count > 0: heading_bullets.append(f"{no_h1_count} pages missing H1")
