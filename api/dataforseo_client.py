@@ -1539,6 +1539,20 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
                     image_data = items[0].get('image')
             
             if image_data:
+                # Handle URL response instead of Base64
+                if str(image_data).startswith('http'):
+                    print(f"DEBUG: DataForSEO returned URL ({image_data}), downloading...", file=sys.stderr, flush=True)
+                    try:
+                        img_response = requests.get(image_data, timeout=30)
+                        img_response.raise_for_status()
+                        # Convert binary content to base64 string
+                        import base64
+                        image_data = base64.b64encode(img_response.content).decode('utf-8')
+                        print(f"DEBUG: Downloaded and encoded image ({len(image_data)} chars)", file=sys.stderr, flush=True)
+                    except Exception as img_err:
+                        print(f"ERROR: Failed to download DataForSEO image URL: {img_err}", file=sys.stderr, flush=True)
+                        return None
+                
                 print(f"DEBUG: DataForSEO screenshot success ({len(image_data)} chars)", file=sys.stderr, flush=True)
                 return image_data
             else:
