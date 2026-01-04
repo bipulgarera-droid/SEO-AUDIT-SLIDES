@@ -28,22 +28,33 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
         if not url.startswith('http'):
             url = f"https://{url}"
         
-        print(f"DEBUG: Capturing screenshot for {url} at {width}x{height}", flush=True)
-
-        # --- PLAYWRIGHT DEBUGGING & SETUP ---
+        # --- PLAYWRIGHT SETUP ---
+        executable_path = None
         try:
-            import sys
-            import subprocess
-            print(f"DEBUG: Python executable: {sys.executable}", flush=True)
-            print(f"DEBUG: PLAYWRIGHT_BROWSERS_PATH env var: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'NOT SET')}", flush=True)
+            import shutil
+            system_chromium = shutil.which("chromium")
+            if system_chromium:
+                print(f"DEBUG: Found system chromium at {system_chromium}", flush=True)
+                executable_path = system_chromium
+            else:
+                print("DEBUG: System chromium not found, relying on Playwright default", flush=True)
         except Exception as e:
-            print(f"DEBUG: Error during pre-flight checks: {e}", flush=True)
+            print(f"DEBUG: Error checking system chromium: {e}", flush=True)
         # -----------------------------
         
         try:
             with sync_playwright() as p:
-                # Launch headless browser
-                browser = p.chromium.launch(headless=True)
+                # Launch config
+                launch_args = {
+                    "headless": True,
+                    "args": ["--no-sandbox", "--disable-setuid-sandbox"] # Essential for container envs
+                }
+                if executable_path:
+                    launch_args["executable_path"] = executable_path
+
+                # Launch browser
+                browser = p.chromium.launch(**launch_args)
+                print(f"DEBUG: Browser launched successfully (Executable: {executable_path or 'Default'})", flush=True)
                 
                 # Create context with viewport size
                 context = browser.new_context(
@@ -71,44 +82,8 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
                 return f"data:image/png;base64,{base64_image}"
 
         except Exception as e:
-            error_msg = str(e)
-            print(f"DEBUG: Playwright launch failed: {error_msg}", flush=True)
-            
-            # SELF-CORRECTION: Try to install if executable not found
-            if "Executable doesn't exist" in error_msg:
-                print("DEBUG: Attempting SELF-CORRECTION: Installing Playwright chromium...", flush=True)
-                try:
-                    # Run install command
-                    process = subprocess.run(
-                        [sys.executable, "-m", "playwright", "install", "chromium"],
-                        capture_output=True,
-                        text=True
-                    )
-                    print(f"DEBUG: Install output: {process.stdout}", flush=True)
-                    print(f"DEBUG: Install error: {process.stderr}", flush=True)
-                    
-                    if process.returncode == 0:
-                        print("DEBUG: Installation successful! Retrying capture...", flush=True)
-                        # RETRY ONCE
-                        with sync_playwright() as p:
-                             browser = p.chromium.launch(headless=True)
-                             context = browser.new_context(
-                                viewport={'width': width, 'height': height},
-                                device_scale_factor=2
-                             )
-                             page = context.new_page()
-                             page.goto(url, wait_until='networkidle', timeout=30000)
-                             page.wait_for_timeout(2000)
-                             screenshot_bytes = page.screenshot(type='png', full_page=False)
-                             browser.close()
-                             
-                             base64_image = base64.b64encode(screenshot_bytes).decode()
-                             print(f"DEBUG: Retry capture successful!", flush=True)
-                             return f"data:image/png;base64,{base64_image}"
-                except Exception as retry_e:
-                    print(f"DEBUG: Self-correction failed: {retry_e}", flush=True)
-            
-            raise e # Re-raise to trigger fallback
+            print(f"DEBUG: Playwright launch failed: {e}", flush=True)
+            raise e
 
     except ImportError:
         print("ERROR: Playwright not installed.", flush=True)

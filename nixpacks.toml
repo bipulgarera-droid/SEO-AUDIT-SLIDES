@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["python39", "chromium", "ffmpeg"]
+
+[variables]
+PLAYWRIGHT_BROWSERS_PATH = "/app/.playwright"
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
+
+[phases.install]
+cmds = ["python -m pip install -r requirements.txt", "mkdir -p /app/.playwright"]
+
+[start]
+cmd = "python api/index.py"
