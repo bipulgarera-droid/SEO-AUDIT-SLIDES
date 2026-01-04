@@ -1516,6 +1516,10 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
         "enable_browser_rendering": True,
         "browser_screen_width": 1920,
         "browser_screen_height": 1080,
+        "viewport_width": 1920,
+        "viewport_height": 1080,
+        "device": "desktop",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
     }]
     
     try:
