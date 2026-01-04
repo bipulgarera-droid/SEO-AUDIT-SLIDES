@@ -20,4 +20,4 @@ EXPOSE $PORT
 
 # Command to run the application
 # Command to run the application using shell for variable expansion
-CMD ["/bin/sh", "-c", "gunicorn api.index:app --bind 0.0.0.0:${PORT:-8080}"]
+CMD ["/bin/sh", "-c", "gunicorn api.index:app --bind 0.0.0.0:${PORT:-8080} --timeout 600 --workers 2"]
