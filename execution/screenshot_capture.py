@@ -28,72 +28,94 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
         if not url.startswith('http'):
             url = f"https://{url}"
         
-        print(f"DEBUG: Capturing screenshot for {url} at {width}x{height}")
+        print(f"DEBUG: Capturing screenshot for {url} at {width}x{height}", flush=True)
 
-        # --- PLAYWRIGHT DEBUGGING ---
+        # --- PLAYWRIGHT DEBUGGING & SETUP ---
         try:
             import sys
-            print(f"DEBUG: Python executable: {sys.executable}")
-            print(f"DEBUG: PLAYWRIGHT_BROWSERS_PATH env var: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'NOT SET')}")
-            
-            browser_path = os.environ.get('PLAYWRIGHT_BROWSERS_PATH', '/app/.playwright')
-            if os.path.exists(browser_path):
-                print(f"DEBUG: Browser directory {browser_path} exists. Contents:")
-                try:
-                    print(os.listdir(browser_path))
-                except Exception as e:
-                    print(f"DEBUG: Could not list {browser_path}: {e}")
-            else:
-                print(f"DEBUG: Browser directory {browser_path} DOES NOT EXIST.")
+            import subprocess
+            print(f"DEBUG: Python executable: {sys.executable}", flush=True)
+            print(f"DEBUG: PLAYWRIGHT_BROWSERS_PATH env var: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'NOT SET')}", flush=True)
         except Exception as e:
-            print(f"DEBUG: Error during pre-flight checks: {e}")
+            print(f"DEBUG: Error during pre-flight checks: {e}", flush=True)
         # -----------------------------
         
-        with sync_playwright() as p:
-            # Launch headless browser
-            browser = p.chromium.launch(headless=True)
+        try:
+            with sync_playwright() as p:
+                # Launch headless browser
+                browser = p.chromium.launch(headless=True)
+                
+                # Create context with viewport size
+                context = browser.new_context(
+                    viewport={'width': width, 'height': height},
+                    device_scale_factor=2,  # 2x for high DPI/retina quality
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                )
+                
+                page = context.new_page()
+                page.goto(url, wait_until='networkidle', timeout=30000)
+                page.wait_for_timeout(2000)
+                
+                screenshot_bytes = page.screenshot(type='png', full_page=False)
+                browser.close()
+                
+                # Save to file if path provided
+                if output_path:
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    with open(output_path, 'wb') as f:
+                        f.write(screenshot_bytes)
+                    print(f"DEBUG: Screenshot saved to {output_path}", flush=True)
+                
+                base64_image = base64.b64encode(screenshot_bytes).decode()
+                print(f"DEBUG: Screenshot captured successfully ({len(screenshot_bytes)} bytes)", flush=True)
+                return f"data:image/png;base64,{base64_image}"
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f"DEBUG: Playwright launch failed: {error_msg}", flush=True)
             
-            # Create context with viewport size
-            context = browser.new_context(
-                viewport={'width': width, 'height': height},
-                device_scale_factor=2,  # 2x for high DPI/retina quality
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            )
+            # SELF-CORRECTION: Try to install if executable not found
+            if "Executable doesn't exist" in error_msg:
+                print("DEBUG: Attempting SELF-CORRECTION: Installing Playwright chromium...", flush=True)
+                try:
+                    # Run install command
+                    process = subprocess.run(
+                        [sys.executable, "-m", "playwright", "install", "chromium"],
+                        capture_output=True,
+                        text=True
+                    )
+                    print(f"DEBUG: Install output: {process.stdout}", flush=True)
+                    print(f"DEBUG: Install error: {process.stderr}", flush=True)
+                    
+                    if process.returncode == 0:
+                        print("DEBUG: Installation successful! Retrying capture...", flush=True)
+                        # RETRY ONCE
+                        with sync_playwright() as p:
+                             browser = p.chromium.launch(headless=True)
+                             context = browser.new_context(
+                                viewport={'width': width, 'height': height},
+                                device_scale_factor=2
+                             )
+                             page = context.new_page()
+                             page.goto(url, wait_until='networkidle', timeout=30000)
+                             page.wait_for_timeout(2000)
+                             screenshot_bytes = page.screenshot(type='png', full_page=False)
+                             browser.close()
+                             
+                             base64_image = base64.b64encode(screenshot_bytes).decode()
+                             print(f"DEBUG: Retry capture successful!", flush=True)
+                             return f"data:image/png;base64,{base64_image}"
+                except Exception as retry_e:
+                    print(f"DEBUG: Self-correction failed: {retry_e}", flush=True)
             
-            page = context.new_page()
-            
-            # Navigate with timeout
-            page.goto(url, wait_until='networkidle', timeout=30000)
-            
-            # Wait a bit for any lazy-loaded content
-            page.wait_for_timeout(2000)
-            
-            # Take screenshot
-            screenshot_bytes = page.screenshot(
-                type='png',
-                full_page=False  # Just viewport, not full scroll
-            )
-            
-            browser.close()
-            
-            # Save to file if path provided
-            if output_path:
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                with open(output_path, 'wb') as f:
-                    f.write(screenshot_bytes)
-                print(f"DEBUG: Screenshot saved to {output_path}")
-            
-            # Return base64 encoded
-            base64_image = base64.b64encode(screenshot_bytes).decode()
-            print(f"DEBUG: Screenshot captured successfully ({len(screenshot_bytes)} bytes)")
-            
-            return f"data:image/png;base64,{base64_image}"
-            
+            raise e # Re-raise to trigger fallback
+
     except ImportError:
-        print("ERROR: Playwright not installed. Run: pip install playwright && playwright install chromium")
+        print("ERROR: Playwright not installed.", flush=True)
         return None
     except Exception as e:
-        print(f"ERROR capturing screenshot with Playwright: {e}")
+        print(f"ERROR capturing screenshot with Playwright: {e}", flush=True)
+        # Check if it was because of the re-raised exception
         return None
 
 
