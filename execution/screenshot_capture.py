@@ -5,6 +5,7 @@ High-quality, reliable screenshot capture for any website
 """
 import os
 import base64
+import subprocess
 from typing import Optional
 
 
@@ -168,12 +169,17 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
         screenshot_b64 = fetch_dataforseo_screenshot(url)
         
         if screenshot_b64:
+            # Crop to 16:9 ratio for proper slide display
+            cropped_b64 = crop_image_to_16_9(screenshot_b64)
+            if cropped_b64:
+                screenshot_b64 = cropped_b64
+            
             # DataForSEO returns plain base64, we need to add prefix
             # Check if prefix already exists (unlikely but safe)
             if screenshot_b64.startswith('data:image'):
                 return screenshot_b64
             else:
-                return f"data:image/jpeg;base64,{screenshot_b64}"
+                return f"data:image/png;base64,{screenshot_b64}"
                 
     except Exception as e:
         print(f"ERROR DataForSEO fallback failed: {e}")
@@ -181,6 +187,74 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
     # Method 3: All failed - return None (slide will be skipped)
     print(f"WARNING: All screenshot methods failed for {url}")
     return None
+
+
+def crop_image_to_16_9(base64_image: str) -> Optional[str]:
+    """
+    Crop an image to 16:9 aspect ratio from top-center.
+    This ensures the screenshot fits properly on the slide layout.
+    
+    Args:
+        base64_image: Base64 encoded image string (with or without data: prefix)
+        
+    Returns:
+        Base64 encoded cropped image, or None if cropping fails
+    """
+    try:
+        from PIL import Image
+        from io import BytesIO
+        
+        # Remove data prefix if present
+        if base64_image.startswith('data:'):
+            base64_image = base64_image.split(',')[1]
+        
+        # Decode base64 to image
+        image_data = base64.b64decode(base64_image)
+        img = Image.open(BytesIO(image_data))
+        
+        original_width, original_height = img.size
+        target_ratio = 16 / 9
+        current_ratio = original_width / original_height
+        
+        print(f"DEBUG: Original image size: {original_width}x{original_height} (ratio: {current_ratio:.2f})", flush=True)
+        
+        # If already 16:9 (or close), return as-is
+        if abs(current_ratio - target_ratio) < 0.1:
+            print("DEBUG: Image already close to 16:9, no cropping needed", flush=True)
+            return None
+        
+        # Calculate crop dimensions
+        if current_ratio < target_ratio:
+            # Image is too tall (narrow), crop height from bottom
+            new_width = original_width
+            new_height = int(original_width / target_ratio)
+            # Crop from top, keeping header/hero area
+            crop_box = (0, 0, new_width, new_height)
+        else:
+            # Image is too wide, crop width from sides
+            new_height = original_height
+            new_width = int(original_height * target_ratio)
+            # Center crop horizontally
+            left = (original_width - new_width) // 2
+            crop_box = (left, 0, left + new_width, new_height)
+        
+        # Perform crop
+        cropped_img = img.crop(crop_box)
+        print(f"DEBUG: Cropped image to {cropped_img.size[0]}x{cropped_img.size[1]}", flush=True)
+        
+        # Encode back to base64
+        buffer = BytesIO()
+        cropped_img.save(buffer, format='PNG')
+        cropped_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        return cropped_b64
+        
+    except ImportError:
+        print("WARNING: Pillow not installed, skipping image crop", flush=True)
+        return None
+    except Exception as e:
+        print(f"WARNING: Image crop failed: {e}", flush=True)
+        return None
 
 
 if __name__ == "__main__":
