@@ -1529,7 +1529,14 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
         
         if data.get('status_code') == 20000 and data.get('tasks'):
             result = (data['tasks'][0].get('result') or [{}])[0] or {}
+            
+            # Check for direct image or nested in items
             image_data = result.get('image')
+            
+            if not image_data and result.get('items'):
+                items = result.get('items')
+                if items and isinstance(items, list) and len(items) > 0:
+                    image_data = items[0].get('image')
             
             if image_data:
                 print(f"DEBUG: DataForSEO screenshot success ({len(image_data)} chars)", file=sys.stderr, flush=True)
@@ -1537,6 +1544,8 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
             else:
                 # Log available keys to debug why image is missing
                 print(f"DEBUG: DataForSEO returned no image data. Keys: {list(result.keys())}", file=sys.stderr, flush=True)
+                if result.get('items'):
+                    print(f"DEBUG: Items found but no image? First item keys: {list(result['items'][0].keys()) if result['items'] else 'empty'}", file=sys.stderr, flush=True)
                 
         else:
             print(f"DEBUG: DataForSEO Error: {data.get('status_message')}", file=sys.stderr, flush=True)
