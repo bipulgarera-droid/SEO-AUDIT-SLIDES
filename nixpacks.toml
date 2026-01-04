@@ -1,5 +1,6 @@
 [phases.setup]
-nixPkgs = ["python39", "chromium", "glib", "nss", "nspr", "dbus", "atk", "cups", "libdrm", "gtk3", "pango", "cairo", "gdk-pixbuf", "libxcomposite", "libxcursor", "libxdamage", "libxext", "libxfixes", "libxi", "libxrandr", "libxrender", "libxscrnsaver", "libxtst", "alsa-lib", "at-spi2-atk", "at-spi2-core", "ffmpeg"]
+nixPkgs = ["python39", "ffmpeg"]
+aptPkgs = ["libglib2.0-0", "libnss3", "libnspr4", "libatk1.0-0", "libatk-bridge2.0-0", "libcups2", "libdrm2", "libxkbcommon0", "libxcomposite1", "libxdamage1", "libxfixes3", "libxrandr2", "libgbm1", "libpango-1.0-0", "libcairo2", "libasound2"]
 
 [variables]
 PLAYWRIGHT_BROWSERS_PATH = "/app/.playwright"
