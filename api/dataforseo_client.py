@@ -1494,6 +1494,54 @@ def fetch_domain_metrics(domain: str) -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+
+def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
+    """
+    Fetch a screenshot of a page using DataForSEO On-Page API.
+    
+    Args:
+        url: The URL to screenshot
+        
+    Returns:
+        Base64 encoded string of the image (plain base64, no prefix), or None
+    """
+    endpoint = f"{DATAFORSEO_API_URL}/on_page/page_screenshot"
+    
+    payload = [{
+        "url": url,
+        "full_page": False
+    }]
+    
+    try:
+        print(f"DEBUG: Requesting DataForSEO screenshot for {url}...", file=sys.stderr)
+        response = requests.post(
+            endpoint,
+            headers={**get_auth_header(), "Content-Type": "application/json"},
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status_code') == 20000 and data.get('tasks'):
+            result = (data['tasks'][0].get('result') or [{}])[0] or {}
+            image_data = result.get('image')
+            
+            if image_data:
+                print(f"DEBUG: DataForSEO screenshot success ({len(image_data)} chars)", file=sys.stderr)
+                return image_data
+            else:
+                print(f"DEBUG: DataForSEO returned no image data", file=sys.stderr)
+                
+        else:
+            print(f"DEBUG: DataForSEO Error: {data.get('status_message')}", file=sys.stderr)
+            
+        return None
+    except Exception as e:
+        print(f"Error fetching DataForSEO screenshot: {e}", file=sys.stderr)
+        return None
+
+
 if __name__ == "__main__":
     # Test the client (requires credentials in env)
     print("DataForSEO Client loaded. Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to use.")

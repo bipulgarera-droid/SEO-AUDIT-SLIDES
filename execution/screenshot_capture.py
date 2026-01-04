@@ -82,7 +82,7 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
     """
     Capture screenshot with fallback chain:
     1. Try Playwright (best quality)
-    2. Try PageSpeed API (fallback)
+    2. Try DataForSEO On-Page API (reliable fallback)
     3. Return None (graceful skip)
     
     Args:
@@ -97,19 +97,27 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
     if result:
         return result
     
-    # Method 2: PageSpeed API fallback
-    print(f"DEBUG: Playwright failed, trying PageSpeed API fallback")
+    # Method 2: DataForSEO API fallback
+    print(f"DEBUG: Playwright failed, trying DataForSEO API fallback")
     try:
-        from execution.pagespeed_insights import fetch_screenshot
-        screenshot_path = fetch_screenshot(url)
+        from api.dataforseo_client import fetch_dataforseo_screenshot
         
-        if screenshot_path and os.path.exists(screenshot_path):
-            with open(screenshot_path, 'rb') as f:
-                screenshot_bytes = f.read()
-            print(f"DEBUG: PageSpeed fallback successful ({len(screenshot_bytes)} bytes)")
-            return f"data:image/jpeg;base64,{base64.b64encode(screenshot_bytes).decode()}"
+        # Ensure URL has protocol for DataForSEO
+        if not url.startswith('http'):
+            url = f"https://{url}"
+            
+        screenshot_b64 = fetch_dataforseo_screenshot(url)
+        
+        if screenshot_b64:
+            # DataForSEO returns plain base64, we need to add prefix
+            # Check if prefix already exists (unlikely but safe)
+            if screenshot_b64.startswith('data:image'):
+                return screenshot_b64
+            else:
+                return f"data:image/jpeg;base64,{screenshot_b64}"
+                
     except Exception as e:
-        print(f"ERROR PageSpeed fallback failed: {e}")
+        print(f"ERROR DataForSEO fallback failed: {e}")
     
     # Method 3: All failed - return None (slide will be skipped)
     print(f"WARNING: All screenshot methods failed for {url}")
