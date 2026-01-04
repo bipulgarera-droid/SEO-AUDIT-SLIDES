@@ -1507,9 +1507,13 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
     """
     endpoint = f"{DATAFORSEO_API_URL}/on_page/page_screenshot"
     
+    # Enable JS and resources for better rendering
     payload = [{
         "url": url,
-        "full_page": False
+        "full_page": False,
+        "enable_javascript": True,
+        "load_resources": True,
+        "enable_browser_rendering": True
     }]
     
     try:
@@ -1531,7 +1535,8 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
                 print(f"DEBUG: DataForSEO screenshot success ({len(image_data)} chars)", file=sys.stderr)
                 return image_data
             else:
-                print(f"DEBUG: DataForSEO returned no image data", file=sys.stderr)
+                # Log available keys to debug why image is missing
+                print(f"DEBUG: DataForSEO returned no image data. Keys: {list(result.keys())}", file=sys.stderr)
                 
         else:
             print(f"DEBUG: DataForSEO Error: {data.get('status_message')}", file=sys.stderr)
