@@ -8,4 +8,4 @@ PLAYWRIGHT_BROWSERS_PATH = "/app/.playwright"
 cmds = ["python -m pip install -r requirements.txt", "mkdir -p /app/.playwright", "PLAYWRIGHT_BROWSERS_PATH=/app/.playwright playwright install chromium"]
 
 [start]
-cmd = "PLAYWRIGHT_BROWSERS_PATH=/app/.playwright python api/index.py"
+cmd = "PLAYWRIGHT_BROWSERS_PATH=/app/.playwright playwright install chromium && PLAYWRIGHT_BROWSERS_PATH=/app/.playwright python api/index.py"
