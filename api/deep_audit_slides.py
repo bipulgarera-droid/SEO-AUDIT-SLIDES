@@ -85,26 +85,31 @@ def get_traffic_annotation(traffic):
     else:
         return "🔴 Low Organic Traffic"
 
-def get_traffic_annotation_with_needs_work(traffic, needs_work_count):
-    """Returns annotation - uses needs_work count if traffic >= 20k."""
+def get_traffic_annotation_with_needs_work(traffic, needs_work_count=0):
+    """Returns annotation based on traffic and keywords that need work.
+    - < 20k traffic: Low Organic Traffic
+    - >= 20k traffic AND needs_work > 20: Many keywords need work
+    - >= 20k traffic AND needs_work <= 20: Strong Organic Traffic
+    """
     traffic = traffic or 0
-    if traffic >= 50000:
-        return "✅ Strong Organic Traffic"
-    elif traffic >= 20000:
-        # Show needs work count instead of "low traffic"
-        return f"⚠️ {needs_work_count} Keywords Need Work"
-    else:
+    needs_work_count = needs_work_count or 0
+    
+    if traffic < 20000:
         return "🔴 Low Organic Traffic"
+    elif needs_work_count > 20:
+        return "📈 Many keywords need work"
+    else:
+        return "✅ Strong Organic Traffic"
 
 def get_keywords_annotation(count, needs_work_count=0):
-    """Returns annotation based on keyword count and ranking quality."""
+    """Returns annotation based on keyword count and ranking quality.
+    Focus on opportunity/potential rather than current status.
+    """
     count = count or 0
-    # If many keywords are ranking poorly (21+), show potential message
-    if needs_work_count > count * 0.3:  # More than 30% need work
-        return "📈 Has potential for more visitors"
-    elif count >= 1000:
-        return "✅ Strong Keyword Portfolio"
-    elif count >= 100:
+    needs_work_count = needs_work_count or 0
+    
+    # If significant keywords or needs work, show potential
+    if needs_work_count > 50 or count >= 100:
         return "📈 Has potential for more visitors"
     else:
         return "⚠️ Limited Keywords"
@@ -219,22 +224,31 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
     print(f"DEBUG SLIDES: pages count: {len(pages)}", file=sys.stderr)
     print(f"DEBUG SLIDES: backlinks keys: {list(backlinks.keys()) if backlinks else 'EMPTY'}", file=sys.stderr)
     
-    # Extract metrics from rank_overview - handle None at each step
-    metrics = rank_overview.get('metrics', {}) if rank_overview else {}
-    organic_metrics = metrics.get('organic') if metrics else {}
-    organic_metrics = organic_metrics if organic_metrics else {}  # Ensure not None
+    # Get traffic and keywords DIRECTLY from data (new correct path)
+    # First try direct fields (from our fixed API), then fallback to rank_overview
+    total_traffic = data.get('total_traffic', 0) or 0
+    total_keywords = data.get('total_keywords', 0) or 0
     
-    print(f"DEBUG SLIDES: organic_metrics: {organic_metrics}", file=sys.stderr)
+    # Fallback to rank_overview.metrics.organic if direct fields are 0
+    if total_traffic == 0 or total_keywords == 0:
+        metrics = rank_overview.get('metrics', {}) if rank_overview else {}
+        organic_metrics = metrics.get('organic') if metrics else {}
+        organic_metrics = organic_metrics if organic_metrics else {}
+        if total_traffic == 0:
+            total_traffic = organic_metrics.get('etv', 0) or 0
+        if total_keywords == 0:
+            total_keywords = organic_metrics.get('count', 0) or 0
     
-    total_traffic = organic_metrics.get('etv', 0) or 0  # Estimated Traffic Value
-    total_keywords = organic_metrics.get('count', 0) or 0
-    
-    # Fallback: use keyword list length if organic_metrics.count is 0
+    # Final fallback: use keyword list length if still 0
     if total_keywords == 0 and keywords:
         total_keywords = len(keywords)
     
-    print(f"DEBUG SLIDES: total_keywords calculated: {total_keywords}", file=sys.stderr)
+    print(f"DEBUG SLIDES: total_traffic = {total_traffic}, total_keywords = {total_keywords}", file=sys.stderr)
     
+    # Get position breakdown from rank_overview if available
+    metrics = rank_overview.get('metrics', {}) if rank_overview else {}
+    organic_metrics = metrics.get('organic') if metrics else {}
+    organic_metrics = organic_metrics if organic_metrics else {}
     pos_1 = organic_metrics.get('pos_1', 0) or 0
     pos_2_3 = organic_metrics.get('pos_2_3', 0) or 0
     pos_4_10 = organic_metrics.get('pos_4_10', 0) or 0
@@ -273,10 +287,9 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
     sc = SCARE_CONTENT['organic']
     requests.extend(create_slide_scare_explainer(generate_id(), sc['title'], sc['body'], sc['stat']))
 
-    # Slide: SEO Overview (Traffic/DR)
+    # Slide: SEO Overview (Traffic/DR) - NO ANNOTATION BOX per user request
     if screenshots and screenshots.get('traffic_overview'):
-        seo_annotation = annotations.get('seo_overview', get_traffic_annotation_with_needs_work(total_traffic, needs_work_count))
-        requests.extend(create_slide_image(generate_id(), "SEO OVERVIEW", screenshots['traffic_overview'], seo_annotation))
+        requests.extend(create_slide_image(generate_id(), "SEO OVERVIEW", screenshots['traffic_overview'], None))
     else:
         requests.extend(create_slide_traffic_dashboard(generate_id(), rank_overview, backlinks, domain, keywords))
 
@@ -296,10 +309,12 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
     # Slide: Meta Issues Screenshot + Bullets
     if screenshots and screenshots.get('meta_issues'):
         # Calculate counts directly from page metadata (robust fallback)
+        print(f"DEBUG SLIDES META: issue_counts={issue_counts}, pages count={len(pages)}", file=sys.stderr)
         if issue_counts:
             title_too_long_count = issue_counts.get('titleTooLong', 0)
             missing_desc_count = issue_counts.get('noDesc', 0)
             desc_too_long_count = issue_counts.get('descTooLong', 0)
+            print(f"DEBUG SLIDES META: Using issue_counts - title={title_too_long_count}, desc_missing={missing_desc_count}, desc_long={desc_too_long_count}", file=sys.stderr)
         else:
             title_too_long_count = 0
             missing_desc_count = 0
@@ -1385,6 +1400,29 @@ def create_slide_cover(sid, domain):
                     'italic': True
                 },
                 'fields': 'fontSize,foregroundColor,italic'
+            }
+        },
+        # Yellow Arrow (Chevron)
+        {
+            'createShape': {
+                'objectId': f"{sid}_arrow",
+                'shapeType': 'CHEVRON', 
+                'elementProperties': {
+                    'pageObjectId': sid,
+                    'size': {'height': {'magnitude': 40, 'unit': 'PT'}, 'width': {'magnitude': 60, 'unit': 'PT'}},
+                    'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': 40, 'translateY': 320, 'unit': 'PT'}
+                }
+            }
+        },
+        {
+            'updateShapeProperties': {
+                'objectId': f"{sid}_arrow",
+                'shapeProperties': {
+                    'shapeBackgroundFill': {'solidFill': {'color': {'rgbColor': COLORS['yellow']}}},
+                    'outline': {'propertyState': 'NOT_RENDERED'},
+                    'contentAlignment': 'MIDDLE' 
+                },
+                'fields': 'shapeBackgroundFill,outline'
             }
         },
         # Image (Funnel) on Right Panel

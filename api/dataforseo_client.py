@@ -353,17 +353,7 @@ def get_page_issues(task_id: str, issue_type: str = "all", limit: int = 100) -> 
                     "onpage_score": page.get('onpage_score', 0),
                     "resource_type": page.get('resource_type', 'html'),
                     
-                    # Meta object for frontend compatibility (frontend reads from p.meta.*)
-                    "meta": {
-                        "title": title,
-                        "description": description,
-                        "h1": h1_list,
-                        "h2": h2_list,
-                        "h3": h3_list,
-                        "canonical": canonical,
-                    },
-                    
-                    # Direct fields for backward compatibility
+                    # SEO meta
                     "title": title,
                     "title_length": len(title),
                     "description": description,
@@ -371,7 +361,7 @@ def get_page_issues(task_id: str, issue_type: str = "all", limit: int = 100) -> 
                     "canonical": canonical,
                     "meta_keywords": meta_keywords,
                     
-                    # Headings (direct access)
+                    # Headings
                     "h1": h1_list,
                     "h1_count": len(h1_list),
                     "h2": h2_list,
@@ -495,12 +485,13 @@ def get_page_issues(task_id: str, issue_type: str = "all", limit: int = 100) -> 
         return {"success": False, "error": str(e)}
 
 
-def get_lighthouse_audit(url: str) -> Dict[str, Any]:
+def get_lighthouse_audit(url: str, for_mobile: bool = True) -> Dict[str, Any]:
     """
     Run a Lighthouse audit on a specific URL for Core Web Vitals.
     
     Args:
         url: The URL to audit
+        for_mobile: If True, run mobile audit; if False, run desktop audit
     
     Returns:
         Dict with Lighthouse scores and metrics
@@ -509,7 +500,7 @@ def get_lighthouse_audit(url: str) -> Dict[str, Any]:
     
     payload = [{
         "url": url,
-        "for_mobile": True,
+        "for_mobile": for_mobile,
         "categories": ["performance", "seo", "accessibility", "best-practices"]
     }]
     
@@ -524,14 +515,7 @@ def get_lighthouse_audit(url: str) -> Dict[str, Any]:
         data = response.json()
         
         if data.get('status_code') == 20000 and data.get('tasks'):
-            task = data['tasks'][0]
-            if not task.get('result'):
-                return {"success": False, "error": "No result data available for this URL"}
-                
-            result = task.get('result')[0]
-            if not result:
-                return {"success": False, "error": "Empty result from PageSpeed API"}
-                
+            result = data['tasks'][0].get('result', [{}])[0]
             categories = result.get('categories', {})
             audits = result.get('audits', {})
             
@@ -539,19 +523,19 @@ def get_lighthouse_audit(url: str) -> Dict[str, Any]:
                 "success": True,
                 "url": url,
                 "scores": {
-                    "performance": int((categories.get('performance', {}).get('score') or 0) * 100) if categories else 0,
-                    "seo": int((categories.get('seo', {}).get('score') or 0) * 100) if categories else 0,
-                    "accessibility": int((categories.get('accessibility', {}).get('score') or 0) * 100) if categories else 0,
-                    "best_practices": int((categories.get('best-practices', {}).get('score') or 0) * 100) if categories else 0
+                    "performance": int((categories.get('performance', {}).get('score') or 0) * 100),
+                    "seo": int((categories.get('seo', {}).get('score') or 0) * 100),
+                    "accessibility": int((categories.get('accessibility', {}).get('score') or 0) * 100),
+                    "best_practices": int((categories.get('best-practices', {}).get('score') or 0) * 100)
                 },
                 "core_web_vitals": {
-                    "lcp": audits.get('largest-contentful-paint', {}).get('displayValue', 'N/A') if audits else 'N/A',
-                    "fid": audits.get('max-potential-fid', {}).get('displayValue', 'N/A') if audits else 'N/A',
-                    "cls": audits.get('cumulative-layout-shift', {}).get('displayValue', 'N/A') if audits else 'N/A',
-                    "fcp": audits.get('first-contentful-paint', {}).get('displayValue', 'N/A') if audits else 'N/A',
-                    "tti": audits.get('interactive', {}).get('displayValue', 'N/A') if audits else 'N/A',
-                    "tbt": audits.get('total-blocking-time', {}).get('displayValue', 'N/A') if audits else 'N/A',
-                    "speed_index": audits.get('speed-index', {}).get('displayValue', 'N/A') if audits else 'N/A'
+                    "lcp": audits.get('largest-contentful-paint', {}).get('displayValue'),
+                    "fid": audits.get('max-potential-fid', {}).get('displayValue'),
+                    "cls": audits.get('cumulative-layout-shift', {}).get('displayValue'),
+                    "fcp": audits.get('first-contentful-paint', {}).get('displayValue'),
+                    "tti": audits.get('interactive', {}).get('displayValue'),
+                    "tbt": audits.get('total-blocking-time', {}).get('displayValue'),
+                    "speed_index": audits.get('speed-index', {}).get('displayValue')
                 }
             }
         else:
@@ -1371,88 +1355,6 @@ def _get_mock_audit_data(domain: str, max_pages: int) -> Dict[str, Any]:
 
 
 
-def fetch_domain_metrics(domain: str) -> Dict[str, Any]:
-    """
-    Fetch domain-level metrics including TOTAL keyword count and TOTAL traffic.
-    Uses DataForSEO Domain Rank Overview API.
-    
-    This gives accurate totals even for sites ranking for 10,000+ keywords,
-    unlike fetch_ranked_keywords which is limited to 1000 keywords.
-    
-    Args:
-        domain: The domain to analyze
-        
-    Returns:
-        Dict with total_keywords, total_traffic, and other domain metrics
-    """
-    endpoint = f"{DATAFORSEO_API_URL}/dataforseo_labs/google/domain_rank_overview/live"
-    
-    payload = [{
-        "target": domain,
-        "location_code": 2356,  # India
-        "language_code": "en"
-    }]
-    
-    try:
-        response = requests.post(
-            endpoint,
-            headers={**get_auth_header(), "Content-Type": "application/json"},
-            json=payload,
-            timeout=60
-        )
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get('status_code') == 20000 and data.get('tasks'):
-            result = (data['tasks'][0].get('result') or [{}])[0] or {}
-            items = result.get('items') or []
-            
-            # Get metrics from the first item (organic search)
-            metrics = {}
-            for item in items:
-                if item.get('se_type') == 'organic':
-                    metrics = item.get('metrics', {})
-                    break
-            
-            # If no organic found, try first item
-            if not metrics and items:
-                metrics = items[0].get('metrics', {})
-            
-            # Extract key metrics
-            total_keywords = metrics.get('organic', {}).get('count', 0) or 0
-            total_traffic = metrics.get('organic', {}).get('etv', 0) or 0  # Estimated Traffic Value
-            paid_keywords = metrics.get('paid', {}).get('count', 0) or 0
-            paid_traffic = metrics.get('paid', {}).get('etv', 0) or 0
-            
-            # Also get position distribution if available
-            pos_distribution = metrics.get('organic', {}).get('pos_1', 0) or 0
-            
-            print(f"DEBUG domain_metrics: domain={domain}, total_keywords={total_keywords}, total_traffic={total_traffic}", flush=True)
-            
-            return {
-                "success": True,
-                "total_keywords": int(total_keywords),
-                "total_traffic": int(total_traffic),
-                "paid_keywords": int(paid_keywords),
-                "paid_traffic": int(paid_traffic),
-                "top_1_keywords": metrics.get('organic', {}).get('pos_1', 0) or 0,
-                "top_3_keywords": (metrics.get('organic', {}).get('pos_1', 0) or 0) + 
-                                 (metrics.get('organic', {}).get('pos_2_3', 0) or 0),
-                "top_10_keywords": (metrics.get('organic', {}).get('pos_1', 0) or 0) + 
-                                  (metrics.get('organic', {}).get('pos_2_3', 0) or 0) +
-                                  (metrics.get('organic', {}).get('pos_4_10', 0) or 0),
-                "raw_metrics": metrics
-            }
-        else:
-            error_msg = data.get('status_message', 'Unknown error')
-            print(f"DEBUG domain_metrics: API error - {error_msg}", flush=True)
-            return {"success": False, "error": error_msg}
-            
-    except Exception as e:
-        print(f"DEBUG domain_metrics: Exception - {e}", flush=True)
-        return {"success": False, "error": str(e)}
-
-
 def fetch_ranked_keywords(domain: str, limit: int = 1000) -> Dict[str, Any]:
     """
     Fetch ranked keywords for a domain from DataForSEO SERP API.
@@ -1488,26 +1390,13 @@ def fetch_ranked_keywords(domain: str, limit: int = 1000) -> Dict[str, Any]:
         if data.get('status_code') == 20000 and data.get('tasks'):
             result = (data['tasks'][0].get('result') or [{}])[0] or {}
             items = result.get('items') or []
-            total_count = result.get('total_count', len(items))
             
-            # Calculate traffic from items
-            total_traffic = 0
-            for item in items:
-                serp = item.get('ranked_serp_element', {}).get('serp_item', {})
-                total_traffic += serp.get('etv', 0) or 0
+            # Get REAL totals from metrics (not summed from limited items)
+            metrics = result.get('metrics', {}).get('organic', {})
+            total_count = metrics.get('count', result.get('total_count', len(items)))
+            total_traffic = metrics.get('etv', 0)  # This is the REAL total traffic
             
             # Return FULL items (not simplified) for dashboard compatibility
-            # DEBUG: Log structure of first item to understand KD location
-            if items:
-                first_item = items[0]
-                print(f"DEBUG KD: First keyword item keys: {list(first_item.keys())}", file=sys.stderr)
-                if 'keyword_data' in first_item:
-                    kd = first_item['keyword_data']
-                    print(f"DEBUG KD: keyword_data keys: {list(kd.keys())}", file=sys.stderr)
-                    if 'serp_info' in kd:
-                        print(f"DEBUG KD: serp_info keys: {list(kd['serp_info'].keys())}", file=sys.stderr)
-                        print(f"DEBUG KD: keyword_difficulty = {kd['serp_info'].get('keyword_difficulty')}", file=sys.stderr)
-            
             return {
                 "success": True,
                 "total_count": total_count,
@@ -1562,31 +1451,21 @@ def fetch_backlinks_summary(domain: str) -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-if __name__ == "__main__":
-    # Test the client (requires credentials in env)
-    print("DataForSEO Client loaded. Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to use.")
 
-def capture_screenshot_via_dataforseo(url: str, browser_preset: str = "desktop_chrome") -> Optional[str]:
+def fetch_domain_metrics(domain: str) -> Dict[str, Any]:
     """
-    Capture a high-quality screenshot using DataForSEO On-Page Screenshot API.
-    This bypasses local headless browser issues by using DataForSEO's infrastructure.
-    
-    Args:
-        url: URL to screenshot
-        browser_preset: 'desktop_chrome', 'mobile_chrome', 'desktop_firefox', etc.
-        
-    Returns:
-        URL of the screenshot (DataForSEO hosted) or None
+    Fetch accurate domain-level metrics (Total Keywords, Total Traffic)
+    using DataForSEO Domain Rank Overview API.
     """
-    endpoint = f"{DATAFORSEO_API_URL}/on_page/page_screenshot"
+    endpoint = f"{DATAFORSEO_API_URL}/dataforseo_labs/google/domain_rank_overview/live"
     
     payload = [{
-        "url": url,
-        "full_page_screenshot": False
+        "target": domain,
+        "location_code": 2356,  # India
+        "language_code": "en"
     }]
     
     try:
-        print(f"DEBUG: Requesting DataForSEO screenshot for {url}")
         response = requests.post(
             endpoint,
             headers={**get_auth_header(), "Content-Type": "application/json"},
@@ -1598,20 +1477,23 @@ def capture_screenshot_via_dataforseo(url: str, browser_preset: str = "desktop_c
         
         if data.get('status_code') == 20000 and data.get('tasks'):
             result = (data['tasks'][0].get('result') or [{}])[0] or {}
-            items = result.get('items') or []
+            metrics = result.get('metrics', {}).get('organic', {})
             
-            if items and len(items) > 0:
-                image_url = items[0].get('image')
-                if image_url:
-                    print(f"DEBUG: DataForSEO screenshot success: {image_url}")
-                    return image_url
-            
-            print(f"DEBUG: DataForSEO returned valid response but no image found in items: {result}")
-            return None
+            return {
+                "success": True,
+                "total_traffic": int(metrics.get('etv', 0) or 0),
+                "total_keywords": int(metrics.get('count', 0) or 0),
+                "top_1_keywords": int(metrics.get('pos_1', 0) or 0),
+                "top_3_keywords": int(metrics.get('pos_2_3', 0) or 0),
+                "top_10_keywords": int(metrics.get('pos_4_10', 0) or 0)
+            }
         else:
-            print(f"DEBUG: DataForSEO error: {data.get('status_message')}")
-            return None
+            return {"success": False, "error": data.get('status_message', 'Unknown error')}
             
     except Exception as e:
-        print(f"ERROR: DataForSEO screenshot failed: {e}")
-        return None
+        return {"success": False, "error": str(e)}
+
+
+if __name__ == "__main__":
+    # Test the client (requires credentials in env)
+    print("DataForSEO Client loaded. Set DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD to use.")

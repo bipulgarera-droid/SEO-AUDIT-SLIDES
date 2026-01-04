@@ -153,14 +153,13 @@ def create_new_audit():
         keywords = keywords_data.get('keywords', []) if isinstance(keywords_data, dict) else []
         log_debug(f"Fetched {len(keywords)} keywords")
         
-        # Step 2.5: Fetch domain metrics for ACCURATE totals (total keywords, total traffic)
-        from api.dataforseo_client import fetch_domain_metrics
-        domain_metrics = fetch_domain_metrics(domain)
-        if domain_metrics.get('success'):
-            log_debug(f"Domain metrics: {domain_metrics.get('total_keywords')} keywords, {domain_metrics.get('total_traffic')} traffic")
-        else:
-            log_debug(f"Domain metrics failed: {domain_metrics.get('error')}")
-            domain_metrics = {}
+        # Get totals from keywords response - these are ACCURATE
+        # The ranked_keywords endpoint returns total_count (real total) and estimated_traffic (sum of visible)
+        keywords_total_count = keywords_data.get('total_count', len(keywords))
+        keywords_estimated_traffic = keywords_data.get('estimated_traffic', 0)
+        keywords_at_limit = keywords_data.get('keywords_at_limit', len(keywords) >= 1000)
+        
+        log_debug(f"Keywords API totals: {keywords_total_count} keywords, {keywords_estimated_traffic} traffic")
         
         # Step 3: Fetch backlinks summary
         backlinks_summary = fetch_backlinks_summary(domain)
@@ -177,13 +176,10 @@ def create_new_audit():
             'status': 'pending',
             'created_at': time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             'organic_keywords': keywords,
-            # Accurate totals from Domain Rank Overview API
-            'total_keywords': domain_metrics.get('total_keywords', len(keywords)),
-            'total_traffic': domain_metrics.get('total_traffic', 0),
-            'top_1_keywords': domain_metrics.get('top_1_keywords', 0),
-            'top_3_keywords': domain_metrics.get('top_3_keywords', 0),
-            'top_10_keywords': domain_metrics.get('top_10_keywords', 0),
-            'keywords_at_limit': len(keywords) >= 1000,
+            # Use totals from keywords API (reliable)
+            'total_keywords': keywords_total_count,
+            'total_traffic': keywords_estimated_traffic,
+            'keywords_at_limit': keywords_at_limit,
             'backlinks_summary': backlinks_summary,
             'referring_domains': referring_domains,
             'max_pages': max_pages
@@ -196,6 +192,8 @@ def create_new_audit():
             'source': 'audit-app'
         }).execute()
         project_id = new_project.data[0]['id'] if new_project.data else None
+        
+        print(f"DEBUG CREATE: Initial total_traffic: {full_audit_data.get('total_traffic')}")
         log_debug(f"Created new project {project_id}")
         
         return jsonify({
@@ -252,27 +250,36 @@ def save_audit_results():
         domain = audit_data.get('domain', project.get('domain', '')).replace('https://', '').replace('http://', '').rstrip('/')
         print(f"DEBUG save-audit: domain='{domain}', audit_data_keys={list(audit_data.keys())}", flush=True)
         
-        # Fetch PageSpeed data using Google's PageSpeed Insights API
+        # Fetch PageSpeed data using Google's PageSpeed Insights API - BOTH mobile and desktop
         pagespeed = {}
         if domain:
             print(f"DEBUG save-audit: Fetching PageSpeed for {domain}...", flush=True)
             try:
                 from execution.pagespeed_insights import fetch_pagespeed_scores
-                ps_result = fetch_pagespeed_scores(f"https://{domain}", strategy="mobile")
-                print(f"DEBUG save-audit: PageSpeed result = {ps_result is not None}", flush=True)
-                if ps_result:
-                    pagespeed = {
-                        'scores': {
-                            'performance': ps_result.get('scores', {}).get('performance', 0),
-                            'accessibility': ps_result.get('scores', {}).get('accessibility', 0),
-                            'best_practices': ps_result.get('scores', {}).get('best_practices', 0),
-                            'seo': ps_result.get('scores', {}).get('seo', 0),
-                        },
-                        'metrics': ps_result.get('metrics', {})
+                
+                # Fetch MOBILE
+                mobile_result = fetch_pagespeed_scores(f"https://{domain}", strategy="mobile")
+                if mobile_result:
+                    pagespeed['mobile'] = {
+                        'scores': mobile_result.get('scores', {}),
+                        'metrics': mobile_result.get('metrics', {})
                     }
-                    print(f"DEBUG save-audit: PageSpeed performance={pagespeed.get('scores', {}).get('performance')}", flush=True)
-                else:
-                    print(f"DEBUG save-audit: PageSpeed fetch returned None", flush=True)
+                    print(f"DEBUG save-audit: Mobile PageSpeed performance={mobile_result.get('scores', {}).get('performance')}", flush=True)
+                
+                # Fetch DESKTOP
+                desktop_result = fetch_pagespeed_scores(f"https://{domain}", strategy="desktop")
+                if desktop_result:
+                    pagespeed['desktop'] = {
+                        'scores': desktop_result.get('scores', {}),
+                        'metrics': desktop_result.get('metrics', {})
+                    }
+                    print(f"DEBUG save-audit: Desktop PageSpeed performance={desktop_result.get('scores', {}).get('performance')}", flush=True)
+                
+                # Also store combined scores for backward compatibility
+                if mobile_result:
+                    pagespeed['scores'] = mobile_result.get('scores', {})
+                    pagespeed['metrics'] = mobile_result.get('metrics', {})
+                    
             except Exception as e:
                 print(f"DEBUG save-audit: PageSpeed error: {e}", flush=True)
         else:
@@ -282,6 +289,8 @@ def save_audit_results():
         audit_data['pages'] = pages
         audit_data['pagespeed'] = pagespeed
         audit_data['status'] = 'completed'
+        
+        print(f"DEBUG SAVE: Writing total_traffic: {audit_data.get('total_traffic')}")
         
         print(f"DEBUG save-audit: Saving to Supabase - pages count={len(audit_data.get('pages', []))}, pagespeed={pagespeed.get('performance', 'N/A')}", flush=True)
         
@@ -382,13 +391,39 @@ def get_audit_detail_endpoint(audit_id):
         if not isinstance(audit_data, dict):
             audit_data = {}
         
+        # Get stored values
+        stored_traffic = audit_data.get('total_traffic', 0)
+        stored_keywords_count = audit_data.get('total_keywords', 0)
+        keywords = audit_data.get('organic_keywords', [])
+        domain = project.get('domain')
+        
+        # If stored values are 0/missing, re-fetch REAL data from DataForSEO
+        if (not stored_traffic or stored_traffic == 0) and domain:
+            try:
+                from api.dataforseo_client import fetch_ranked_keywords
+                fresh_data = fetch_ranked_keywords(domain, limit=1)  # Just get metrics, not all keywords
+                if fresh_data.get('success'):
+                    stored_traffic = fresh_data.get('estimated_traffic', 0)
+                    stored_keywords_count = fresh_data.get('total_count', len(keywords))
+                    print(f"DEBUG GET: Re-fetched from DataForSEO: traffic={stored_traffic}, keywords={stored_keywords_count}")
+            except Exception as e:
+                print(f"DEBUG GET: Failed to re-fetch: {e}")
+                # Fall back to stored keywords length
+                stored_keywords_count = len(keywords)
+        
+        if not stored_keywords_count or stored_keywords_count == 0:
+            stored_keywords_count = len(keywords)
+        
+        print(f"DEBUG GET: Returning total_traffic: {stored_traffic}, total_keywords: {stored_keywords_count}")
+        
         # Build the audit object in the format frontend expects
+        # NOTE: **audit_data is first so our explicit values override stored values
         audit = {
+            **audit_data,
             'id': project['id'],
             'domain': project.get('domain'),
             'created_at': project.get('created_at'),
-            # Frontend expects these specific fields from the audit data:
-            'keywords': audit_data.get('organic_keywords', []),
+            'keywords': keywords,
             'pages': audit_data.get('pages', []),
             'backlinks': audit_data.get('backlinks', audit_data.get('backlinks_summary', {})),
             'backlinks_summary': audit_data.get('backlinks_summary', audit_data.get('backlinks', {})),
@@ -396,10 +431,9 @@ def get_audit_detail_endpoint(audit_id):
             'pagespeed': audit_data.get('pagespeed', {}),
             'issues': audit_data.get('issues', {}),
             'estimated_traffic': audit_data.get('estimated_traffic', 0),
-            'total_keywords': audit_data.get('total_keywords', len(audit_data.get('organic_keywords', []))),
-            'keywords_at_limit': audit_data.get('keywords_at_limit', False),
-            # Include full data for any other access patterns
-            **audit_data
+            'total_traffic': stored_traffic,
+            'total_keywords': stored_keywords_count,
+            'keywords_at_limit': audit_data.get('keywords_at_limit', len(keywords) >= 1000),
         }
         
         return jsonify({
@@ -481,7 +515,22 @@ def get_deep_audit_results(task_id):
 def generate_deep_audit_slides():
     """Generate Google Slides presentation from audit data"""
     try:
-        data = request.get_json()
+        # Robust JSON parsing - handle both JSON and raw bytes
+        data = request.get_json(silent=True)
+        if data is None:
+            # Fallback: try to parse raw request data
+            raw_data = request.data
+            if isinstance(raw_data, bytes):
+                try:
+                    data = json.loads(raw_data.decode('utf-8'))
+                except:
+                    data = {}
+            else:
+                data = {}
+        
+        if not isinstance(data, dict):
+            data = {}
+            
         screenshots = data.get('screenshots', {})
         audit_data = data.get('audit_data')
         project_id = data.get('project_id')
@@ -596,12 +645,12 @@ def generate_deep_audit_slides():
                         else:
                             encoded = data_uri
                             
-                        data = base64.b64decode(encoded)
+                        img_data = base64.b64decode(encoded)
                         filename = f"{uuid.uuid4()}.png"
                         
                         # Upload
                         supabase.storage.from_(bucket_name).upload(
-                            file=data,
+                            file=img_data,
                             path=filename,
                             file_options={"content-type": "image/png", "x-upsert": "true"}
                         )
@@ -627,12 +676,16 @@ def generate_deep_audit_slides():
             except:
                 pass
 
+        # Get issue counts from frontend if provided
+        issue_counts = data.get('issue_counts', None)
+
         # Generate presentation using create_deep_audit_slides
         result = create_deep_audit_slides(
             data=audit_data,
             domain=domain,
             creds=creds,
-            screenshots=processed_screenshots
+            screenshots=processed_screenshots,
+            issue_counts=issue_counts
         )
         
         if result and result.get('presentation_id'):
@@ -678,13 +731,13 @@ def analyze_readability(audit_id):
         project = result.data[0]
         audit_data = project.get('full_audit_data', {}) or {}
         
-        # Handle string audit_data
+        # Handle stringified JSON
         if isinstance(audit_data, str):
             try:
                 audit_data = json.loads(audit_data)
             except:
                 audit_data = {}
-        
+
         # Check if we have cached readability results
         if audit_data.get('readability_results') and not request.args.get('refresh'):
             return jsonify({
@@ -945,27 +998,43 @@ def refresh_speed(audit_id):
              return jsonify({"error": "No domain found"}), 400
         
         # Ensure URL has protocol
-        url = f"https://{domain}" if not domain.startswith('http') else domain
+        if not domain.startswith('http'):
+            domain = 'https://' + domain
+            
+        print(f"Refreshing PageSpeed for: {domain} (Audit: {audit_id})...")
         
-        log_debug(f"Refreshing speed for {url}")
-        lh_data = get_lighthouse_audit(url)
+        pagespeed_data = {'url': domain}
         
-        if not lh_data.get('success'):
-             return jsonify({"error": lh_data.get('error')}), 500
-             
-        # Format for frontend
-        pagespeed_data = {
-            "scores": lh_data.get('scores', {}),
-            "metrics": {
-                 "lcp": lh_data['core_web_vitals'].get('lcp'),
-                 "fcp": lh_data['core_web_vitals'].get('fcp'),
-                 "cls": lh_data['core_web_vitals'].get('cls'),
-                 "tbt": lh_data['core_web_vitals'].get('tbt'),
-                 "speed_index": lh_data['core_web_vitals'].get('speed_index'),
-                 "si-value": lh_data['core_web_vitals'].get('speed_index')
-            }
-        }
+        # Mobile
+        print(f"  Fetching Mobile scores (Google PageSpeed)...")
+        from execution.pagespeed_insights import fetch_pagespeed_scores
         
+        # Helper for valid checks
+        def mobile_result_valid(res):
+            return res and res.get('success') and res.get('scores')
+            
+        mobile_res = fetch_pagespeed_scores(domain, strategy='mobile')
+        
+        if mobile_result_valid(mobile_res):
+            pagespeed_data['mobile'] = mobile_res
+            print(f"  Mobile Success: {mobile_res.get('scores', {})}")
+        else:
+            print(f"  Mobile Failed: {mobile_res.get('error') if mobile_res else 'No result'}")
+            
+        # Desktop
+        print(f"  Fetching Desktop scores (Google PageSpeed)...")
+        desktop_res = fetch_pagespeed_scores(domain, strategy='desktop')
+        
+        if mobile_result_valid(desktop_res):
+            pagespeed_data['desktop'] = desktop_res
+            print(f"  Desktop Success: {desktop_res.get('scores', {})}")
+        else:
+            print(f"  Desktop Failed: {desktop_res.get('error') if desktop_res else 'No result'}")
+            
+        if 'mobile' not in pagespeed_data and 'desktop' not in pagespeed_data:
+             return jsonify({"success": False, "error": "Failed to fetch any PageSpeed data. Check API keys and URL."}), 500
+
+        # Update full_data
         full_audit_data['pagespeed'] = pagespeed_data
         
         supabase.table('projects').update({
@@ -974,8 +1043,7 @@ def refresh_speed(audit_id):
         
         return jsonify({
             "success": True, 
-            "scores": pagespeed_data['scores'],
-            "metrics": pagespeed_data['metrics']
+            "pagespeed": pagespeed_data
         })
 
     except Exception as e:

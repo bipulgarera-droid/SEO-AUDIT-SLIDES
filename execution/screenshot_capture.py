@@ -31,11 +31,8 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
         print(f"DEBUG: Capturing screenshot for {url} at {width}x{height}")
         
         with sync_playwright() as p:
-            # Launch headless browser with sandbox disabled (critical for Railway/Docker)
-            browser = p.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
-            )
+            # Launch headless browser
+            browser = p.chromium.launch(headless=True)
             
             # Create context with viewport size
             context = browser.new_context(
@@ -74,14 +71,10 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
             return f"data:image/png;base64,{base64_image}"
             
     except ImportError:
-        print("ERROR: Playwright not installed. Check requirements.txt.")
+        print("ERROR: Playwright not installed. Run: pip install playwright && playwright install chromium")
         return None
     except Exception as e:
-        error_msg = str(e)
-        if "Executable doesn't exist" in error_msg:
-            print(f"ERROR: Chromium not found. Playwright installation might be incomplete on this environment. Details: {error_msg}")
-        else:
-            print(f"ERROR capturing screenshot with Playwright: {e}")
+        print(f"ERROR capturing screenshot with Playwright: {e}")
         return None
 
 
@@ -99,36 +92,27 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
         Base64 encoded image string, or None if all methods fail
     """
     # Method 1: Playwright (best quality)
-    print(f"DEBUG: Attempting HIGH-QUALITY Playwright screenshot for {url}")
+    print(f"DEBUG: Attempting Playwright screenshot for {url}")
     result = capture_website_screenshot(url)
     if result:
-        print(f"SUCCESS: Playwright capture successful for {url}")
         return result
     
-    # Method 2: DataForSEO API Fallback (High Quality)
-    print(f"WARNING: Playwright failed for {url}, attempting DataForSEO fallback")
+    # Method 2: PageSpeed API fallback
+    print(f"DEBUG: Playwright failed, trying PageSpeed API fallback")
     try:
-        from api.dataforseo_client import capture_screenshot_via_dataforseo
-        import requests
+        from execution.pagespeed_insights import fetch_screenshot
+        screenshot_path = fetch_screenshot(url)
         
-        image_url = capture_screenshot_via_dataforseo(url)
-        if image_url:
-            # Fetch the image content to convert to base64
-            # DataForSEO returns a URL to the image file
-            print(f"DEBUG: Fetching image from {image_url}")
-            img_resp = requests.get(image_url, timeout=30)
-            if img_resp.status_code == 200:
-                img_b64 = base64.b64encode(img_resp.content).decode()
-                # DataForSEO usually returns PNG or JPG, we can default to jpg/png
-                # The browser preset 'desktop_chrome' usually implies standard format.
-                return f"data:image/png;base64,{img_b64}"
-            else:
-                print(f"ERROR: Failed to download DataForSEO image: {img_resp.status_code}")
+        if screenshot_path and os.path.exists(screenshot_path):
+            with open(screenshot_path, 'rb') as f:
+                screenshot_bytes = f.read()
+            print(f"DEBUG: PageSpeed fallback successful ({len(screenshot_bytes)} bytes)")
+            return f"data:image/jpeg;base64,{base64.b64encode(screenshot_bytes).decode()}"
     except Exception as e:
-        print(f"ERROR DataForSEO fallback failed for {url}: {e}")
+        print(f"ERROR PageSpeed fallback failed: {e}")
     
     # Method 3: All failed - return None (slide will be skipped)
-    print(f"CRITICAL: All screenshot methods failed for {url}")
+    print(f"WARNING: All screenshot methods failed for {url}")
     return None
 
 

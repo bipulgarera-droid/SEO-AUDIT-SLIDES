@@ -5,8 +5,9 @@ google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
 supabase
+beautifulsoup4
 python-dotenv
 playwright
-beautifulsoup4
 textstat
 gunicorn==21.2.0
+urllib3<2.0.0
