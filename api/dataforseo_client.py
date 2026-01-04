@@ -1517,7 +1517,7 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
     }]
     
     try:
-        print(f"DEBUG: Requesting DataForSEO screenshot for {url}...", file=sys.stderr)
+        print(f"DEBUG: Requesting DataForSEO screenshot for {url}...", file=sys.stderr, flush=True)
         response = requests.post(
             endpoint,
             headers={**get_auth_header(), "Content-Type": "application/json"},
@@ -1532,18 +1532,18 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
             image_data = result.get('image')
             
             if image_data:
-                print(f"DEBUG: DataForSEO screenshot success ({len(image_data)} chars)", file=sys.stderr)
+                print(f"DEBUG: DataForSEO screenshot success ({len(image_data)} chars)", file=sys.stderr, flush=True)
                 return image_data
             else:
                 # Log available keys to debug why image is missing
-                print(f"DEBUG: DataForSEO returned no image data. Keys: {list(result.keys())}", file=sys.stderr)
+                print(f"DEBUG: DataForSEO returned no image data. Keys: {list(result.keys())}", file=sys.stderr, flush=True)
                 
         else:
-            print(f"DEBUG: DataForSEO Error: {data.get('status_message')}", file=sys.stderr)
+            print(f"DEBUG: DataForSEO Error: {data.get('status_message')}", file=sys.stderr, flush=True)
             
         return None
     except Exception as e:
-        print(f"Error fetching DataForSEO screenshot: {e}", file=sys.stderr)
+        print(f"Error fetching DataForSEO screenshot: {e}", file=sys.stderr, flush=True)
         return None
 
 
