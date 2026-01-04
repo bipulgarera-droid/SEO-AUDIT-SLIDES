@@ -19,4 +19,5 @@ ENV PORT=8080
 EXPOSE $PORT
 
 # Command to run the application
-CMD gunicorn api.index:app --bind 0.0.0.0:$PORT
+# Command to run the application using shell for variable expansion
+CMD ["/bin/sh", "-c", "gunicorn api.index:app --bind 0.0.0.0:${PORT:-8080}"]
