@@ -7,7 +7,6 @@ google-auth-httplib2
 supabase
 beautifulsoup4
 python-dotenv
-playwright
 textstat
 Pillow
 gunicorn==21.2.0

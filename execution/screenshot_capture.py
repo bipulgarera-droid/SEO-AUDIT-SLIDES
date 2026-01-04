@@ -140,25 +140,16 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
 
 def capture_screenshot_with_fallback(url: str) -> Optional[str]:
     """
-    Capture screenshot with fallback chain:
-    1. Try Playwright (best quality)
-    2. Try DataForSEO On-Page API (reliable fallback)
-    3. Return None (graceful skip)
+    Capture screenshot using DataForSEO API.
+    The image is cropped to 16:9 ratio for proper slide display.
     
     Args:
         url: The URL to screenshot
         
     Returns:
-        Base64 encoded image string, or None if all methods fail
+        Base64 encoded image string, or None if capture fails
     """
-    # Method 1: Playwright (best quality)
-    print(f"DEBUG: Attempting Playwright screenshot for {url}")
-    result = capture_website_screenshot(url)
-    if result:
-        return result
-    
-    # Method 2: DataForSEO API fallback
-    print(f"DEBUG: Playwright failed, trying DataForSEO API fallback")
+    print(f"DEBUG: Capturing screenshot for {url} using DataForSEO")
     try:
         from api.dataforseo_client import fetch_dataforseo_screenshot
         
@@ -174,18 +165,16 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
             if cropped_b64:
                 screenshot_b64 = cropped_b64
             
-            # DataForSEO returns plain base64, we need to add prefix
-            # Check if prefix already exists (unlikely but safe)
+            # Add data prefix if not present
             if screenshot_b64.startswith('data:image'):
                 return screenshot_b64
             else:
                 return f"data:image/png;base64,{screenshot_b64}"
                 
     except Exception as e:
-        print(f"ERROR DataForSEO fallback failed: {e}")
+        print(f"ERROR DataForSEO screenshot failed: {e}")
     
-    # Method 3: All failed - return None (slide will be skipped)
-    print(f"WARNING: All screenshot methods failed for {url}")
+    print(f"WARNING: Screenshot capture failed for {url}")
     return None
 
 
