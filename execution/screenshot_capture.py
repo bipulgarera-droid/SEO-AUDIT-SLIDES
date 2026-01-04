@@ -32,12 +32,55 @@ def capture_website_screenshot(url: str, output_path: str = None, width: int = 1
         executable_path = None
         try:
             import shutil
-            system_chromium = shutil.which("chromium")
-            if system_chromium:
-                print(f"DEBUG: Found system chromium at {system_chromium}", flush=True)
-                executable_path = system_chromium
-            else:
-                print("DEBUG: System chromium not found, relying on Playwright default", flush=True)
+            import glob
+            
+            # 1. Search PATH for common names
+            start_time = time.time()
+            for name in ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]:
+                path = shutil.which(name)
+                if path:
+                    print(f"DEBUG: Found system chromium via PATH: {path}", flush=True)
+                    executable_path = path
+                    break
+            
+            # 2. If not found, fast search in common Nix/Linux locations
+            if not executable_path:
+                print("DEBUG: Chromium not in PATH, searching common locations...", flush=True)
+                common_paths = [
+                    "/usr/bin/chromium", 
+                    "/usr/bin/chromium-browser",
+                    "/usr/local/bin/chromium",
+                    "/nix/var/nix/profiles/default/bin/chromium",
+                    "/root/.nix-profile/bin/chromium"
+                ]
+                for p in common_paths:
+                    if os.path.exists(p) and os.access(p, os.X_OK):
+                         print(f"DEBUG: Found system chromium at common path: {p}", flush=True)
+                         executable_path = p
+                         break
+
+            # 3. Slow search (Find command equivalent) - limit depth or specific dir if possible
+            if not executable_path and os.path.exists("/nix"):
+                 print("DEBUG: Searching /nix store for chromium binary...", flush=True)
+                 # This is expensive, but we only do it if all else fails. 
+                 # Look for 'chromium' binary in bin directories within nix store
+                 # Using find via subprocess is faster than python walk for deep trees
+                 try:
+                     find_cmd = ["find", "/nix/store", "-name", "chromium", "-type", "f", "-path", "*/bin/chromium"]
+                     result = subprocess.run(find_cmd, capture_output=True, text=True, timeout=10) # 10s timeout
+                     paths = result.stdout.strip().split('\n')
+                     # Filter for executable ones
+                     valid_paths = [p for p in paths if p and os.access(p, os.X_OK)]
+                     if valid_paths:
+                         # Pick the shortest path (likely the main one) or first
+                         executable_path = valid_paths[0]
+                         print(f"DEBUG: Found chromium specific path in /nix: {executable_path}", flush=True)
+                 except Exception as find_err:
+                     print(f"DEBUG: Find command failed: {find_err}", flush=True)
+
+            if not executable_path:
+                print("DEBUG: System chromium STILL not found, relying on Playwright default", flush=True)
+                
         except Exception as e:
             print(f"DEBUG: Error checking system chromium: {e}", flush=True)
         # -----------------------------
