@@ -65,6 +65,32 @@ def get_service_account_credentials():
     return None
 
 
+def get_token_json_credentials():
+    """
+    Get OAuth token credentials from env var.
+    Allows using personal Google account on Railway without a Service Account.
+    
+    Priority:
+    1. GOOGLE_TOKEN_JSON env var (JSON string)
+    """
+    env_token = os.getenv('GOOGLE_TOKEN_JSON')
+    if env_token:
+        try:
+            token_info = json.loads(env_token)
+            creds = Credentials.from_authorized_user_info(token_info, SCOPES)
+            print("Using OAuth Credentials from GOOGLE_TOKEN_JSON env var")
+            
+            # Refresh if expired available
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            
+            return creds
+        except Exception as e:
+            print(f"Error loading GOOGLE_TOKEN_JSON: {e}")
+    
+    return None
+
+
 def get_client_secret_config():
     """
     Get OAuth client secret from env var or file.
@@ -115,6 +141,11 @@ def get_google_credentials():
     if sa_creds:
         return sa_creds
     
+    # Try Env Var OAuth Token (for personal account on production)
+    token_creds = get_token_json_credentials()
+    if token_creds:
+        return token_creds
+
     # Fall back to OAuth for local development
     token_file = os.path.join(PROJECT_ROOT, "token.json")
     if os.path.exists(token_file):
