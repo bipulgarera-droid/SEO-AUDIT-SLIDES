@@ -1210,6 +1210,7 @@ def create_slide_homepage_snapshot(sid, image_url):
     """Creates a slide with the homepage snapshot filling the entire slide."""
     reqs = [
          {'createSlide': {'objectId': sid, 'slideLayoutReference': {'predefinedLayout': 'BLANK'}}},
+         {'updatePageProperties': {'objectId': sid, 'pageProperties': {'pageBackgroundFill': {'solidFill': {'color': {'rgbColor': {'red': 0, 'green': 0, 'blue': 0}}}}}, 'fields': 'pageBackgroundFill'}},
          
          # Image (Full Screen 720x405)
          {'createImage': {

@@ -1513,7 +1513,9 @@ def fetch_dataforseo_screenshot(url: str) -> Optional[str]:
         "full_page": False,
         "enable_javascript": True,
         "load_resources": True,
-        "enable_browser_rendering": True
+        "enable_browser_rendering": True,
+        "browser_screen_width": 1920,
+        "browser_screen_height": 1080,
     }]
     
     try:
