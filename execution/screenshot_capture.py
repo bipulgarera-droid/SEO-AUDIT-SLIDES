@@ -97,7 +97,48 @@ def capture_screenshot_with_fallback(url: str) -> Optional[str]:
     if result:
         return result
     
-    # Method 2: DataForSEO API fallback
+    # Method 2: PageSpeed Insights (Primary Fallback - Desktop Quality)
+    print(f"DEBUG: Playwright failed, trying PageSpeed Insights (Desktop Strategy)")
+    try:
+        # Pinned API Key (from existing env/code)
+        PAGESPEED_API_KEY = os.environ.get("PAGESPEED_API_KEY", "AIzaSyBSz0KCoCYy_9VSUaqVlWr-wF-BL2KdpPM")
+        
+        # Ensure URL has protocol
+        ps_url = url if url.startswith('http') else f"https://{url}"
+        
+        params = {
+            "url": ps_url,
+            "key": PAGESPEED_API_KEY,
+            "strategy": "desktop",  # Force Desktop Viewport
+            "category": ["performance"],
+            "screenshot": "true"
+        }
+        
+        import requests
+        response = requests.get("https://www.googleapis.com/pagespeedonline/v5/runPagespeed", params=params, timeout=60)
+        
+        if response.status_code == 200:
+            data = response.json()
+            # Extract screenshot data
+            lighthouse = data.get("lighthouseResult", {})
+            audits = lighthouse.get("audits", {})
+            screenshot_audit = audits.get("final-screenshot", {})
+            details = screenshot_audit.get("details", {})
+            base64_data = details.get("data", "")
+            
+            if base64_data:
+                # PageSpeed returns "data:image/jpeg;base64,..." - perfect for us
+                print(f"DEBUG: PageSpeed screenshot success ({len(base64_data)} chars)")
+                return base64_data
+            else:
+                print("DEBUG: PageSpeed returned 200 but no screenshot data")
+        else:
+            print(f"DEBUG: PageSpeed API failed with status {response.status_code}: {response.text[:200]}")
+            
+    except Exception as e:
+        print(f"ERROR PageSpeed fallback failed: {e}")
+
+    # Method 3: DataForSEO API fallback
     print(f"DEBUG: Playwright failed, trying DataForSEO API fallback")
     try:
         from api.dataforseo_client import fetch_dataforseo_screenshot
