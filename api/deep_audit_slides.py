@@ -1396,34 +1396,11 @@ def create_slide_cover(sid, domain):
             'updateTextStyle': {
                 'objectId': f"{sid}_subtitle",
                 'style': {
-                    'fontSize': {'magnitude': 18, 'unit': 'PT'},
+                    'fontSize': {'magnitude': 22, 'unit': 'PT'},
                     'foregroundColor': {'opaqueColor': {'rgbColor': COLORS['yellow']}},
-                    'italic': True
+                    'bold': True
                 },
-                'fields': 'fontSize,foregroundColor,italic'
-            }
-        },
-        # Yellow Arrow (Chevron)
-        {
-            'createShape': {
-                'objectId': f"{sid}_arrow",
-                'shapeType': 'CHEVRON', 
-                'elementProperties': {
-                    'pageObjectId': sid,
-                    'size': {'height': {'magnitude': 40, 'unit': 'PT'}, 'width': {'magnitude': 60, 'unit': 'PT'}},
-                    'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': 40, 'translateY': 320, 'unit': 'PT'}
-                }
-            }
-        },
-        {
-            'updateShapeProperties': {
-                'objectId': f"{sid}_arrow",
-                'shapeProperties': {
-                    'shapeBackgroundFill': {'solidFill': {'color': {'rgbColor': COLORS['yellow']}}},
-                    'outline': {'propertyState': 'NOT_RENDERED'},
-                    'contentAlignment': 'MIDDLE' 
-                },
-                'fields': 'shapeBackgroundFill,outline'
+                'fields': 'fontSize,foregroundColor,bold'
             }
         },
         # Image (Funnel) on Right Panel
