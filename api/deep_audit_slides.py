@@ -43,8 +43,8 @@ COLORS = {
 SCARE_CONTENT = {
     'organic': {
         'title': 'WHY ORGANIC VISIBILITY MATTERS',
-        'body': '• 93% of all online experiences begin with a search engine.\n• If you aren\'t visible for target keywords, you effectively don\'t exist.\n• Search traffic is the highest-intent source for generating new customers.\n• Failing to rank means handing market share directly to your competitors.\n• Organic visibility builds long-term authority and recurring revenue.',
-        'stat': '75% of users never scroll past the first page of search results.'
+        'body': 'Your website is often the first impression potential customers have of your business. When users search for solutions you offer, showing up on Google\'s first page is about more than just traffic. It\'s about credibility and trust. A strong content strategy directly builds your domain authority, signaling to search engines that your site is a reliable source of information. Without this authority, even the best products struggle to reach their audience.\n\nEqually important is your site architecture. A well-structured website helps Google\'s crawlers understand and index your pages efficiently. Poor architecture leads to orphaned pages, broken internal links, and missed ranking opportunities. When competitors have cleaner structures, they capture the market share you\'re leaving on the table.',
+        'stat': ''
     },
     'meta': {
         'title': 'THE COST OF POOR META TAGS',
@@ -330,9 +330,9 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
                 elif len(desc) > 160: desc_too_long_count += 1
     
         meta_bullets = []
-        if title_too_long_count > 0: meta_bullets.append(f"{title_too_long_count} pages with titles too long")
-        if missing_desc_count > 0: meta_bullets.append(f"{missing_desc_count} pages missing description")
-        if desc_too_long_count > 0: meta_bullets.append(f"{desc_too_long_count} pages with description too long")
+        if title_too_long_count > 0: meta_bullets.append(f"{title_too_long_count} {'page' if title_too_long_count == 1 else 'pages'} with titles too long")
+        if missing_desc_count > 0: meta_bullets.append(f"{missing_desc_count} {'page' if missing_desc_count == 1 else 'pages'} missing description")
+        if desc_too_long_count > 0: meta_bullets.append(f"{desc_too_long_count} {'page' if desc_too_long_count == 1 else 'pages'} with description too long")
         
         if not meta_bullets: meta_bullets = ["No major meta issues found"]
         
@@ -403,15 +403,15 @@ def create_deep_audit_slides(data, domain, creds=None, screenshots=None, annotat
              dup_h3_count = len([k for k, v in h3_map.items() if v > 1])
 
         heading_bullets = []
-        if no_h1_count > 0: heading_bullets.append(f"{no_h1_count} pages missing H1")
-        if multi_h1_count > 0: heading_bullets.append(f"{multi_h1_count} pages with multiple H1s")
-        if dup_h1_count > 0: heading_bullets.append(f"{dup_h1_count} duplicate H1 headings found")
-        if no_h2_count > 0: heading_bullets.append(f"{no_h2_count} pages missing H2")
-        if many_h2_count > 0: heading_bullets.append(f"{many_h2_count} pages with too many H2")
-        if dup_h2_count > 0: heading_bullets.append(f"{dup_h2_count} duplicate H2 headings found")
-        if no_h3_count > 0: heading_bullets.append(f"{no_h3_count} pages missing H3")
-        if many_h3_count > 0: heading_bullets.append(f"{many_h3_count} pages with too many H3")
-        if dup_h3_count > 0: heading_bullets.append(f"{dup_h3_count} duplicate H3 headings found")
+        if no_h1_count > 0: heading_bullets.append(f"{no_h1_count} {'page' if no_h1_count == 1 else 'pages'} missing H1")
+        if multi_h1_count > 0: heading_bullets.append(f"{multi_h1_count} {'page' if multi_h1_count == 1 else 'pages'} with multiple H1s")
+        if dup_h1_count > 0: heading_bullets.append(f"{dup_h1_count} duplicate H1 {'heading' if dup_h1_count == 1 else 'headings'} found")
+        if no_h2_count > 0: heading_bullets.append(f"{no_h2_count} {'page' if no_h2_count == 1 else 'pages'} missing H2")
+        if many_h2_count > 0: heading_bullets.append(f"{many_h2_count} {'page' if many_h2_count == 1 else 'pages'} with too many H2")
+        if dup_h2_count > 0: heading_bullets.append(f"{dup_h2_count} duplicate H2 {'heading' if dup_h2_count == 1 else 'headings'} found")
+        if no_h3_count > 0: heading_bullets.append(f"{no_h3_count} {'page' if no_h3_count == 1 else 'pages'} missing H3")
+        if many_h3_count > 0: heading_bullets.append(f"{many_h3_count} {'page' if many_h3_count == 1 else 'pages'} with too many H3")
+        if dup_h3_count > 0: heading_bullets.append(f"{dup_h3_count} duplicate H3 {'heading' if dup_h3_count == 1 else 'headings'} found")
         
         if not heading_bullets: heading_bullets = ["No major heading issues found"]
         
@@ -1846,12 +1846,16 @@ def create_slide_scare_explainer(sid, title, body, stat):
         {'insertText': {'objectId': f"{sid}_body", 'text': body}},
         {'updateTextStyle': {'objectId': f"{sid}_body", 'style': {'fontSize': {'magnitude': 13, 'unit': 'PT'}, 'fontFamily': 'Arial', 'foregroundColor': {'opaqueColor': {'rgbColor': {'red': 0.2, 'green': 0.2, 'blue': 0.2}}}}, 'fields': 'fontSize,fontFamily,foregroundColor'}},
         {'updateParagraphStyle': {'objectId': f"{sid}_body", 'style': {'lineSpacing': 130, 'spaceAbove': {'magnitude': 3, 'unit': 'PT'}}, 'fields': 'lineSpacing,spaceAbove'}},
-
-        # 5. Stat / Emphasis Text (Bottom)
-        {'createShape': {'objectId': f"{sid}_stat", 'shapeType': 'TEXT_BOX', 'elementProperties': {'pageObjectId': sid, 'size': {'height': {'magnitude': 50, 'unit': 'PT'}, 'width': {'magnitude': 480, 'unit': 'PT'}}, 'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': 220, 'translateY': 330, 'unit': 'PT'}}}},
-        {'insertText': {'objectId': f"{sid}_stat", 'text': stat}},
-        {'updateTextStyle': {'objectId': f"{sid}_stat", 'style': {'fontSize': {'magnitude': 13, 'unit': 'PT'}, 'fontFamily': 'Arial', 'bold': True, 'foregroundColor': {'opaqueColor': {'rgbColor': COLORS['primary']}}}, 'fields': 'fontSize,fontFamily,bold,foregroundColor'}},
     ]
+    
+    # 5. Stat / Emphasis Text (Bottom) - only add if stat is not empty
+    if stat:
+        reqs.extend([
+            {'createShape': {'objectId': f"{sid}_stat", 'shapeType': 'TEXT_BOX', 'elementProperties': {'pageObjectId': sid, 'size': {'height': {'magnitude': 50, 'unit': 'PT'}, 'width': {'magnitude': 480, 'unit': 'PT'}}, 'transform': {'scaleX': 1, 'scaleY': 1, 'translateX': 220, 'translateY': 330, 'unit': 'PT'}}}},
+            {'insertText': {'objectId': f"{sid}_stat", 'text': stat}},
+            {'updateTextStyle': {'objectId': f"{sid}_stat", 'style': {'fontSize': {'magnitude': 13, 'unit': 'PT'}, 'fontFamily': 'Arial', 'bold': True, 'foregroundColor': {'opaqueColor': {'rgbColor': COLORS['primary']}}}, 'fields': 'fontSize,fontFamily,bold,foregroundColor'}},
+        ])
+    
     return reqs
 
 def create_basic_slide(sid, title):
